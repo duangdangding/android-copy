@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ImageView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/ivBall"
+    android:layout_width="52dp"
+    android:layout_height="52dp"
+    android:background="@drawable/bg_ball"
+    android:contentDescription="剪贴板悬浮球"
+    android:padding="12dp"
+    android:src="@drawable/ic_clipboard" />
