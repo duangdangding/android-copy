@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 平板（宽度 ≥ 600dp）：保持原有按钮大小不变 -->
+<resources>
+    <dimen name="scan_btn_text_size">12sp</dimen>
+    <dimen name="scan_btn_padding_h">16dp</dimen>
+    <dimen name="scan_btn_min_w">88dp</dimen>
+    <dimen name="scan_btn_min_h">48dp</dimen>
+</resources>
