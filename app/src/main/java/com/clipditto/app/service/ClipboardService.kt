@@ -47,6 +47,7 @@ import com.clipditto.app.ui.MainActivity
 import com.clipditto.app.util.FuzzySearch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
@@ -651,12 +652,17 @@ class ClipboardService : Service() {
                     ignoreNextChange = false
                     // 与轮询共用签名闸门：已处理过的内容（即使记录被删）不再重复入库
                     pollClipboard()
-                    // 等入库完成后再刷新列表
-                    handler.postDelayed({ if (panelView != null) refreshPanel() }, 600)
                 }
             }
         }, 300)
-        refreshPanel()
+        // 面板打开期间实时订阅数据库：复制入库 / 去重置顶 / 同步写入都会立即刷新列表
+        panelFlowJob?.cancel()
+        panelFlowJob = scope.launch {
+            repo.clips.collectLatest { list ->
+                panelFullList = list
+                applyPanelFilter()
+            }
+        }
     }
 
     private var panelParams: WindowManager.LayoutParams? = null
@@ -678,6 +684,9 @@ class ClipboardService : Service() {
     private var panelFullList: List<ClipItem> = emptyList()
     private var panelQuery: String = ""
 
+    /** 面板打开期间订阅数据库变化：新复制/去重置顶/局域网同步写入都实时刷新列表 */
+    private var panelFlowJob: Job? = null
+
     private fun refreshPanel() {
         scope.launch {
             panelFullList = repo.getAll()
@@ -696,6 +705,8 @@ class ClipboardService : Service() {
     }
 
     private fun hidePanel() {
+        panelFlowJob?.cancel()
+        panelFlowJob = null
         panelView?.let { runCatching { wm.removeView(it) } }
         panelView = null
         panelParams = null
