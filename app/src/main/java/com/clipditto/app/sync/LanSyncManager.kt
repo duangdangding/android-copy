@@ -68,11 +68,10 @@ object LanSyncManager {
                 pairApprovalUiHandler?.invoke(requester)
             },
             onUnpaired = { deviceId ->
-                // 对方主动解除配对/拉黑本机：本地解除配对，并记入 blockedBy
-                // （扫描时隐藏对方、操作拦截）。注意：不反向拉黑对方——
-                // A 拉黑 B 不应导致 B 的黑名单出现 A，更不能扩散到第三方 C。
+                // 对方主动解除配对：本地同步解除配对。
+                // 取消配对 ≠ 被拉黑：不记 blockedBy，双方之后仍可正常重新配对；
+                // "被对方拉黑"走 /blocked 通知（onBlockedBy），不要扩散到这里
                 settings.removePairedDevice(deviceId)
-                settings.addBlockedBy(deviceId)
                 refreshDevices()
             },
             onUnblocked = { deviceId ->
@@ -80,7 +79,8 @@ object LanSyncManager {
                 refreshDevices()
             },
             onBlockedBy = { deviceId ->
-                // 经回连验证确实被对方拉黑：记录 blockedBy，列表隐藏对方
+                // 经回连验证确实被对方拉黑：解除本地配对、记录 blockedBy，列表隐藏对方
+                settings.removePairedDevice(deviceId)
                 settings.addBlockedBy(deviceId)
                 refreshDevices()
             }
@@ -202,17 +202,10 @@ object LanSyncManager {
     fun unpair(deviceId: String) {
         val device = settings.getPairedDevices()[deviceId]
             ?: _devices.value.firstOrNull { it.deviceId == deviceId }
+        // 取消配对 ≠ 拉黑：不进黑名单。对方若仍持旧配对码来拉取，
+        // 服务端会以"未配对"拒绝（见 LanSyncServer.rejectIfUnpaired），
+        // 对方收到后自动解除本地配对状态
         settings.removePairedDevice(deviceId)
-        // 拉黑对方：之后它的同步请求会被本机服务端明确拒绝（unpaired），
-        // 对方同步时会自动把自己这边的状态改为未配对
-        settings.blockDevice(
-            deviceId,
-            device?.displayName ?: "",
-            device?.model,
-            token = device?.token,
-            host = device?.host,
-            port = device?.port ?: 0
-        )
         refreshDevices()
         // 主动通知对方立即解除配对（对方不在线则静默失败，被动流程兜底）
         device?.takeIf { it.host != null && it.token != null }?.let { d ->
@@ -229,15 +222,13 @@ object LanSyncManager {
         )
         refreshDevices()
         // 通知对方：
-        // - 有配对码（已配对过）→ /unpair 通知，对方记录 blockedBy
-        // - 无配对码（未配对）→ /blocked 通知（免配对码，对方回连验证后生效）
+        // - 有配对码（已配对过）→ /unpair 通知，让对方立即解除本地配对
+        // - /blocked 通知（免配对码，对方回连验证后生效）→ 对方记录"被你拉黑"并隐藏本机
         val host = device.host
         if (host != null) {
             scope.launch {
-                runCatching {
-                    if (device.token != null) client.notifyUnpair(device)
-                    else client.notifyBlocked(host, device.port)
-                }
+                if (device.token != null) runCatching { client.notifyUnpair(device) }
+                runCatching { client.notifyBlocked(host, device.port) }
             }
         }
     }

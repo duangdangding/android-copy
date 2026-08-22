@@ -159,6 +159,7 @@ class LanSyncServer(
     ) {
         if (!authorize(output, headers)) return
         if (rejectIfBlocked(output, headers)) return
+        if (rejectIfUnpaired(output, headers)) return
         maybeAutoPair(headers, clientIp)
         val since = query["since"]?.toLongOrNull() ?: 0L
         val requesterId = headers["x-device-id"] ?: ""
@@ -177,6 +178,7 @@ class LanSyncServer(
     ) {
         if (!authorize(output, headers)) return
         if (rejectIfBlocked(output, headers)) return
+        if (rejectIfUnpaired(output, headers)) return
         maybeAutoPair(headers, clientIp)
         val id = query["id"]?.toLongOrNull()
         val item = id?.let { runBlocking { repo.getById(it) } }
@@ -200,7 +202,7 @@ class LanSyncServer(
         }
         val blocked = requester.deviceId in settings.getBlockedDevices()
         when {
-            // 被拉黑的设备必须手动同意（即使开了自动同意），防止取消配对后被悄悄重连
+            // 被显式拉黑的设备必须手动同意（即使开了自动同意），防止绕过确认悄悄重连
             blocked -> when (pairApproval(requester)) {
                 true -> {
                     settings.unblockDevice(requester.deviceId)
@@ -225,7 +227,7 @@ class LanSyncServer(
         }
     }
 
-    /** 被本机取消配对（拉黑）的设备：拒绝其内容请求并明确告知 */
+    /** 被本机拉黑的设备：拒绝其内容请求并明确告知（对方收到后自动解除本地配对） */
     private fun rejectIfBlocked(output: OutputStream, headers: Map<String, String>): Boolean {
         val deviceId = headers["x-device-id"] ?: return false
         if (deviceId !in settings.getBlockedDevices()) return false
@@ -235,8 +237,21 @@ class LanSyncServer(
     }
 
     /**
+     * 未配对设备（含已取消配对但仍持有旧配对码的）不允许拉取内容：
+     * 明确返回 unpaired，对方客户端收到后会自动解除本地配对状态。
+     * 必须在 maybeAutoPair 之前检查，否则请求方会被自动重新登记为已配对。
+     */
+    private fun rejectIfUnpaired(output: OutputStream, headers: Map<String, String>): Boolean {
+        val deviceId = headers["x-device-id"]
+        if (deviceId != null && deviceId in settings.getPairedDevices()) return false
+        Log.d(TAG, "未配对设备内容请求被拒: $deviceId")
+        respond(output, 403, "application/json", """{"error":"unpaired"}""")
+        return true
+    }
+
+    /**
      * 对方主动通知"已取消配对"：只校验配对码（共享开关不影响解除配对），
-     * 通过则立即在本地解除与该设备的配对并拉黑，双方列表状态同步。
+     * 通过则立即在本地解除与该设备的配对。取消配对 ≠ 拉黑，不记 blockedBy。
      */
     private fun handleUnpair(output: OutputStream, headers: Map<String, String>) {
         val token = headers["x-token"]
