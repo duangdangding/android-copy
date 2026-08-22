@@ -1,0 +1,32 @@
+# ---------- 本地配置 ----------
+# 包含本机 SDK 路径，每台电脑不同
+local.properties
+
+# ---------- Android Studio / IDEA ----------
+.idea/
+*.iml
+.cxx/
+captures/
+
+# ---------- Gradle ----------
+.gradle/
+build/
+# 项目里解压的完整 Gradle 发行版（仅命令行打包用，体积大）
+gradle-8.7/
+
+# ---------- 构建产物 ----------
+app/build/
+app/release/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# ---------- 签名密钥（绝对不能上传） ----------
+*.jks
+*.keystore
+
+# ---------- 其他 ----------
+*.log
+.DS_Store
+Thumbs.db
