@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical">
@@ -175,24 +176,33 @@
             android:id="@+id/btnRescan"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:minWidth="@dimen/scan_btn_min_w"
+            android:minHeight="@dimen/scan_btn_min_h"
+            android:paddingHorizontal="@dimen/scan_btn_padding_h"
             android:text="重新扫描"
-            android:textSize="12sp" />
+            android:textSize="@dimen/scan_btn_text_size" />
 
         <Button
             android:id="@+id/btnAddIp"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="4dp"
+            android:minWidth="@dimen/scan_btn_min_w"
+            android:minHeight="@dimen/scan_btn_min_h"
+            android:paddingHorizontal="@dimen/scan_btn_padding_h"
             android:text="输IP添加"
-            android:textSize="12sp" />
+            android:textSize="@dimen/scan_btn_text_size" />
 
         <Button
             android:id="@+id/btnSweep"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="4dp"
+            android:minWidth="@dimen/scan_btn_min_w"
+            android:minHeight="@dimen/scan_btn_min_h"
+            android:paddingHorizontal="@dimen/scan_btn_padding_h"
             android:text="深度扫描"
-            android:textSize="12sp" />
+            android:textSize="@dimen/scan_btn_text_size" />
     </LinearLayout>
 
     <TextView
