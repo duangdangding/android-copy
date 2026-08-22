@@ -4,6 +4,7 @@ import android.app.AlertDialog
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
+import android.view.LayoutInflater
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
@@ -18,6 +19,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.clipditto.app.R
 import com.clipditto.app.data.ClipRepository
 import com.clipditto.app.sync.LanDevice
+import com.clipditto.app.sync.LanSettings
 import com.clipditto.app.sync.LanSyncManager
 import com.clipditto.app.sync.BlockedByException
 import com.clipditto.app.sync.NeedPairingException
@@ -195,35 +197,44 @@ class DevicesActivity : AppCompatActivity() {
     // ---------------- 黑名单 ----------------
 
     private fun showBlacklistDialog() {
-        val blocked = LanSyncManager.getBlockedList()
-        if (blocked.isEmpty()) {
-            Toast.makeText(this, "黑名单为空", Toast.LENGTH_SHORT).show()
-            return
+        val view = LayoutInflater.from(this).inflate(R.layout.dialog_blacklist, null)
+        val tvTitle = view.findViewById<TextView>(R.id.tvBlacklistTitle)
+        val recycler = view.findViewById<RecyclerView>(R.id.blacklistRecycler)
+        val tvEmpty = view.findViewById<TextView>(R.id.tvBlacklistEmpty)
+        val dialog = AlertDialog.Builder(this).setView(view).create()
+
+        lateinit var blockedAdapter: BlockedAdapter
+        fun refreshBlocked() {
+            val entries = LanSyncManager.getBlockedList().entries.toList()
+            blockedAdapter.submit(entries)
+            tvTitle.text = "黑名单（${entries.size} 台）"
+            tvEmpty.visibility = if (entries.isEmpty()) View.VISIBLE else View.GONE
         }
-        val entries = blocked.entries.toList()
-        val labels = entries.map { (id, info) ->
-            buildString {
-                append(info.name.ifBlank { "未知设备" })
-                info.model?.takeIf { it.isNotBlank() }?.let { append("（$it）") }
-                append("\n$id")
-            }
-        }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("黑名单（${entries.size} 台）\n黑名单中的设备无法扫描到本机，也无法与本机互相操作")
-            .setItems(labels) { _, which ->
-                val (id, info) = entries[which]
-                AlertDialog.Builder(this)
-                    .setMessage("把「${info.name.ifBlank { "未知设备" }}」移出黑名单？\n移出后双方可重新扫描和配对")
-                    .setPositiveButton("移出") { _, _ ->
-                        LanSyncManager.unblockDevice(id)
-                        refreshDiag()
-                        Toast.makeText(this, "已移出黑名单", Toast.LENGTH_SHORT).show()
-                    }
-                    .setNegativeButton("取消", null)
-                    .show()
-            }
-            .setNegativeButton("关闭", null)
-            .show()
+
+        blockedAdapter = BlockedAdapter { entry ->
+            val (id, info) = entry
+            AlertDialog.Builder(this)
+                .setMessage("把「${info.name.ifBlank { "未知设备" }}」移出黑名单？\n移出后双方可重新扫描和配对")
+                .setPositiveButton("移出") { _, _ ->
+                    LanSyncManager.unblockDevice(id)
+                    refreshDiag()
+                    refreshBlocked()
+                    Toast.makeText(this, "已移出黑名单", Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("取消", null)
+                .show()
+        }
+        recycler.layoutManager = LinearLayoutManager(this)
+        recycler.adapter = blockedAdapter
+        refreshBlocked()
+
+        view.findViewById<Button>(R.id.btnBlacklistClose).setOnClickListener { dialog.dismiss() }
+        dialog.show()
+        // 黑名单很多时限制列表高度，弹窗内部滚动，不超出屏幕
+        recycler.post {
+            val max = (resources.displayMetrics.heightPixels * 0.45f).toInt()
+            if (recycler.height > max) recycler.layoutParams.height = max
+        }
     }
 
     /** 加入黑名单确认 */
@@ -609,4 +620,45 @@ class DevicesActivity : AppCompatActivity() {
             .setNegativeButton("取消", null)
             .show()
     }
+}
+
+/** 黑名单列表适配器：头像 + 名称/型号 + 右侧「移出」按钮，设备 ID 编码不展示 */
+private class BlockedAdapter(
+    private val onUnblock: (Map.Entry<String, LanSettings.BlockedInfo>) -> Unit
+) : RecyclerView.Adapter<BlockedAdapter.VH>() {
+
+    private val items = mutableListOf<Map.Entry<String, LanSettings.BlockedInfo>>()
+
+    fun submit(list: List<Map.Entry<String, LanSettings.BlockedInfo>>) {
+        items.clear()
+        items.addAll(list)
+        notifyDataSetChanged()
+    }
+
+    class VH(view: View) : RecyclerView.ViewHolder(view) {
+        val avatar: TextView = view.findViewById(R.id.tvBlockedAvatar)
+        val name: TextView = view.findViewById(R.id.tvBlockedName)
+        val model: TextView = view.findViewById(R.id.tvBlockedModel)
+        val btnUnblock: TextView = view.findViewById(R.id.btnUnblock)
+    }
+
+    override fun onCreateViewHolder(parent: android.view.ViewGroup, viewType: Int): VH {
+        val view = LayoutInflater.from(parent.context)
+            .inflate(R.layout.item_blocked_device, parent, false)
+        return VH(view)
+    }
+
+    override fun onBindViewHolder(holder: VH, position: Int) {
+        val entry = items[position]
+        val info = entry.value
+        val displayName = info.name.ifBlank { "未知设备" }
+        holder.avatar.text = displayName.first().toString()
+        holder.name.text = displayName
+        val model = info.model?.takeIf { it.isNotBlank() }
+        holder.model.text = model ?: ""
+        holder.model.visibility = if (model == null) View.GONE else View.VISIBLE
+        holder.btnUnblock.setOnClickListener { onUnblock(entry) }
+    }
+
+    override fun getItemCount(): Int = items.size
 }
