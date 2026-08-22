@@ -4,6 +4,15 @@
 
     <!-- 悬浮窗 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- 局域网同步：网络访问 + NSD 组播 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- Android 13+ 局域网发现 -->
+    <uses-permission
+        android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation" />
     <!-- 前台服务 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
@@ -37,6 +46,7 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.ClipDitto"
+        android:usesCleartextTraffic="true"
         tools:targetApi="34">
 
         <activity
@@ -47,6 +57,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 局域网剪贴板同步：设备列表页 -->
+        <activity
+            android:name=".ui.DevicesActivity"
+            android:exported="false" />
 
         <!-- 剪贴板监听 + 悬浮窗服务 -->
         <service

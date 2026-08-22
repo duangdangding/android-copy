@@ -16,7 +16,11 @@ data class ClipItem(
     /** 复制来源 App 的包名（取不到则为空） */
     val sourceApp: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
-    val favorite: Boolean = false
+    val favorite: Boolean = false,
+    /** 局域网同步：内容最初来源设备的 deviceId；本机原创为 null */
+    val remoteDeviceId: String? = null,
+    /** 局域网同步：该内容在来源设备上的记录 id；本机原创为 null */
+    val remoteId: Long? = null
 )
 
 object ClipType {

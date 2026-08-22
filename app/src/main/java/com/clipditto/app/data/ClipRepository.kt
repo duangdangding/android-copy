@@ -103,6 +103,21 @@ class ClipRepository(private val context: Context) {
 
     suspend fun count(): Int = dao.count()
 
+    suspend fun getSince(since: Long): List<ClipItem> = dao.getSince(since)
+
+    suspend fun getById(id: Long): ClipItem? = dao.getById(id)
+
+    /** 局域网同步：插入远端记录（调用方需已完成去重判断） */
+    suspend fun insertRemote(item: ClipItem): Long = insert(item)
+
+    /** 局域网同步：删除来自某设备的全部记录并清理媒体文件，返回删除条数 */
+    suspend fun deleteRemoteDevice(deviceId: String): Int = withContext(Dispatchers.IO) {
+        val items = dao.getByRemoteDevice(deviceId)
+        items.forEach { it.filePath?.let { p -> File(p).delete() } }
+        dao.deleteByRemoteDevice(deviceId)
+        items.size
+    }
+
     suspend fun insertAll(items: List<ClipItem>) = withContext(Dispatchers.IO) {
         items.forEach { dao.insert(it.copy(id = 0)) }
     }

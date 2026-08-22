@@ -117,6 +117,9 @@ class MainActivity : AppCompatActivity() {
             importLauncher.launch(arrayOf("application/zip", "application/octet-stream"))
         }
         findViewById<Button>(R.id.btnMaxRecords).setOnClickListener { showMaxRecordsDialog() }
+        findViewById<Button>(R.id.btnLanSync).setOnClickListener {
+            startActivity(Intent(this, DevicesActivity::class.java))
+        }
 
         requestNotificationPermissionIfNeeded()
     }

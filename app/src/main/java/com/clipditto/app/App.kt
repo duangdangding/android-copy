@@ -3,6 +3,7 @@ package com.clipditto.app
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import com.clipditto.app.sync.LanSyncManager
 
 class App : Application() {
 
@@ -10,6 +11,8 @@ class App : Application() {
         super.onCreate()
         instance = this
         createNotificationChannel()
+        // 局域网同步：按开关状态恢复服务/发现
+        runCatching { LanSyncManager.init(this) }
     }
 
     private fun createNotificationChannel() {

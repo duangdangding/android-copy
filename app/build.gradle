@@ -15,15 +15,16 @@ android {
         // ===== 版本号：每次发版改这里 =====
         // versionCode：整数，只能递增（1, 2, 3...），系统靠它判断"是不是新版本"
         // versionName：给人看的版本字符串，显示在应用信息里
-        versionCode 3
-        versionName "2"
+        versionCode 4
+        versionName "2.1"
     }
 
     // ===== 打包后的 APK 文件名 =====
     // 效果：ClipDitto_v1.0_debug.apk / ClipDitto_v1.0_release.apk
     applicationVariants.all { variant ->
         variant.outputs.all {
-            outputFileName = "剪贴板_v${variant.versionName}_${variant.buildType.name}.apk"
+            outputFileName = "剪贴板_v${variant.versionName}.apk"
+//            outputFileName = "剪贴板_v${variant.versionName}_${variant.buildType.name}.apk"
         }
     }
 

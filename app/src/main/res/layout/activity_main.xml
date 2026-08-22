@@ -97,6 +97,13 @@
         android:layout_marginHorizontal="8dp"
         android:text="记录数量上限：无限制" />
 
+    <Button
+        android:id="@+id/btnLanSync"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="8dp"
+        android:text="局域网同步（设备列表）" />
+
     <EditText
         android:id="@+id/etSearch"
         android:layout_width="match_parent"

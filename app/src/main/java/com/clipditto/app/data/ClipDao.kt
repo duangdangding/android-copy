@@ -66,4 +66,18 @@ interface ClipDao {
     /** 最旧的 n 条非收藏记录（用于超出上限时清理） */
     @Query("SELECT * FROM clips WHERE favorite = 0 ORDER BY timestamp ASC LIMIT :count")
     suspend fun oldestNonFavorite(count: Int): List<ClipItem>
+
+    /** 局域网同步：比指定时间新的记录（增量拉取用） */
+    @Query("SELECT * FROM clips WHERE timestamp > :since ORDER BY timestamp ASC")
+    suspend fun getSince(since: Long): List<ClipItem>
+
+    @Query("SELECT * FROM clips WHERE id = :id")
+    suspend fun getById(id: Long): ClipItem?
+
+    /** 局域网同步：来自某设备的全部记录 */
+    @Query("SELECT * FROM clips WHERE remoteDeviceId = :deviceId")
+    suspend fun getByRemoteDevice(deviceId: String): List<ClipItem>
+
+    @Query("DELETE FROM clips WHERE remoteDeviceId = :deviceId")
+    suspend fun deleteByRemoteDevice(deviceId: String)
 }
