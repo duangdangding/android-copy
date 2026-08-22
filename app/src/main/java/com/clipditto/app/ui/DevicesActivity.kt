@@ -19,6 +19,7 @@ import com.clipditto.app.R
 import com.clipditto.app.data.ClipRepository
 import com.clipditto.app.sync.LanDevice
 import com.clipditto.app.sync.LanSyncManager
+import com.clipditto.app.sync.BlockedByException
 import com.clipditto.app.sync.NeedPairingException
 import com.clipditto.app.sync.SharingOffException
 import com.clipditto.app.sync.UnpairedException
@@ -75,6 +76,7 @@ class DevicesActivity : AppCompatActivity() {
 
         findViewById<TextView>(R.id.tvPort).setOnClickListener { showPortDialog() }
         findViewById<TextView>(R.id.tvMyName).setOnClickListener { showRenameDialog() }
+        findViewById<TextView>(R.id.tvBlacklist).setOnClickListener { showBlacklistDialog() }
 
         findViewById<Button>(R.id.btnAddIp).setOnClickListener { showAddIpDialog() }
         findViewById<Button>(R.id.btnSweep).setOnClickListener {
@@ -185,6 +187,57 @@ class DevicesActivity : AppCompatActivity() {
             "服务端口：${s.serverPort}（点击修改，需两台设备保持一致）"
         findViewById<TextView>(R.id.tvMyName).text =
             "本机名称：${s.deviceName}（点击修改，对方列表里显示此名）"
+        val blocked = LanSyncManager.getBlockedList()
+        findViewById<TextView>(R.id.tvBlacklist).text =
+            "黑名单：${blocked.size} 台（点击管理）"
+    }
+
+    // ---------------- 黑名单 ----------------
+
+    private fun showBlacklistDialog() {
+        val blocked = LanSyncManager.getBlockedList()
+        if (blocked.isEmpty()) {
+            Toast.makeText(this, "黑名单为空", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val entries = blocked.entries.toList()
+        val labels = entries.map { (id, info) ->
+            buildString {
+                append(info.name.ifBlank { "未知设备" })
+                info.model?.takeIf { it.isNotBlank() }?.let { append("（$it）") }
+                append("\n$id")
+            }
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("黑名单（${entries.size} 台）\n黑名单中的设备无法扫描到本机，也无法与本机互相操作")
+            .setItems(labels) { _, which ->
+                val (id, info) = entries[which]
+                AlertDialog.Builder(this)
+                    .setMessage("把「${info.name.ifBlank { "未知设备" }}」移出黑名单？\n移出后双方可重新扫描和配对")
+                    .setPositiveButton("移出") { _, _ ->
+                        LanSyncManager.unblockDevice(id)
+                        refreshDiag()
+                        Toast.makeText(this, "已移出黑名单", Toast.LENGTH_SHORT).show()
+                    }
+                    .setNegativeButton("取消", null)
+                    .show()
+            }
+            .setNegativeButton("关闭", null)
+            .show()
+    }
+
+    /** 加入黑名单确认 */
+    private fun confirmBlock(d: LanDevice) {
+        AlertDialog.Builder(this)
+            .setTitle("加入黑名单")
+            .setMessage("「${d.displayName}」加入黑名单后：\n· 你无法对它同步/配对\n· 它无法扫描到本机\n· 它无法访问本机内容\n\n确定？")
+            .setPositiveButton("加入") { _, _ ->
+                LanSyncManager.blockDevice(d)
+                refreshDiag()
+                Toast.makeText(this, "已加入黑名单", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     // ---------------- 本机名称 ----------------
@@ -376,9 +429,22 @@ class DevicesActivity : AppCompatActivity() {
         }
         when {
             !d.online -> Toast.makeText(this, "设备不在线", Toast.LENGTH_SHORT).show()
-            !d.paired -> showPairDialog(d)
+            !d.paired -> showUnpairedMenu(d)
             else -> showDeviceMenu(d)
         }
+    }
+
+    /** 未配对设备点击：配对 / 加入黑名单 */
+    private fun showUnpairedMenu(d: LanDevice) {
+        AlertDialog.Builder(this)
+            .setTitle(d.displayName)
+            .setItems(arrayOf("配对", "加入黑名单")) { _, which ->
+                when (which) {
+                    0 -> showPairDialog(d)
+                    1 -> confirmBlock(d)
+                }
+            }
+            .show()
     }
 
     // ---------------- 配对 ----------------
@@ -440,6 +506,10 @@ class DevicesActivity : AppCompatActivity() {
                             "对方拒绝了本次配对"
                         is LanSyncManager.PairError.NeedConfirm ->
                             "等待对方确认超时\n\n请让对方打开「设备页」后重试，或让对方开启「自动同意配对请求」"
+                        is LanSyncManager.PairError.Blocked ->
+                            "该设备在你的黑名单中\n\n请先在「黑名单」中将其移出"
+                        is LanSyncManager.PairError.BlockedBy ->
+                            "对方已把你加入黑名单\n\n等对方移出黑名单后可重新配对"
                         is LanSyncManager.PairError.ConnectFail ->
                             "连不上对方\n\n${err.detail}"
                     }
@@ -462,11 +532,12 @@ class DevicesActivity : AppCompatActivity() {
     private fun showDeviceMenu(d: LanDevice) {
         AlertDialog.Builder(this)
             .setTitle(d.displayName)
-            .setItems(arrayOf("立即同步", "删除该设备同步来的记录", "取消配对")) { _, which ->
+            .setItems(arrayOf("立即同步", "删除该设备同步来的记录", "取消配对", "加入黑名单")) { _, which ->
                 when (which) {
                     0 -> syncDevices(listOf(d))
                     1 -> confirmDeleteRemote(listOf(d))
                     2 -> LanSyncManager.unpair(d.deviceId)
+                    3 -> confirmBlock(d)
                 }
             }
             .show()
@@ -505,6 +576,8 @@ class DevicesActivity : AppCompatActivity() {
                         is NeedPairingException -> "需要配对（点击设备输入配对码）"
                         is SharingOffException -> "对方关闭了共享"
                         is UnpairedException -> "对方已取消与你的配对（本机已自动解除配对状态）"
+                        is LanSyncManager.BlockedException -> "该设备在你的黑名单中（点上方「黑名单」可移出）"
+                        is BlockedByException -> "对方已把你加入黑名单，无法操作"
                         else -> it.message ?: "连接失败"
                     }
                     sb.append("$name：失败（$reason）\n")

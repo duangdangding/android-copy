@@ -117,23 +117,73 @@ class LanSettings(context: Context) {
         prefs.edit().putString(KEY_PAIRED, gson.toJson(map)).apply()
     }
 
-    /** 已拉黑（被本机主动取消配对）的设备 id 集合 */
-    fun getBlockedDevices(): Set<String> {
-        val json = prefs.getString(KEY_BLOCKED, null) ?: return emptySet()
+    /** 黑名单条目（存名称/型号/配对码/地址，方便管理页展示和解除时通知对方） */
+    data class BlockedInfo(
+        val name: String = "",
+        val model: String? = null,
+        val token: String? = null,
+        val host: String? = null,
+        val port: Int = 0
+    )
+
+    /** 黑名单（被本机拉黑的设备）：对方无法扫描到本机、无法请求本机任何接口 */
+    fun getBlocked(): Map<String, BlockedInfo> {
+        val json = prefs.getString(KEY_BLOCKED, null) ?: return emptyMap()
+        runCatching {
+            return gson.fromJson(
+                json, object : TypeToken<Map<String, BlockedInfo>>() {}.type
+            ) ?: emptyMap()
+        }
+        // 兼容旧格式（Set<String>）
+        return runCatching {
+            gson.fromJson<Set<String>>(json, object : TypeToken<Set<String>>() {}.type)
+                ?.associateWith { BlockedInfo() } ?: emptyMap()
+        }.getOrNull() ?: emptyMap()
+    }
+
+    fun getBlockedDevices(): Set<String> = getBlocked().keys
+
+    fun blockDevice(
+        deviceId: String,
+        name: String = "",
+        model: String? = null,
+        token: String? = null,
+        host: String? = null,
+        port: Int = 0
+    ) {
+        val map = getBlocked().toMutableMap()
+        map[deviceId] = BlockedInfo(name, model, token, host, port)
+        prefs.edit().putString(KEY_BLOCKED, gson.toJson(map)).apply()
+    }
+
+    fun unblockDevice(deviceId: String) {
+        val map = getBlocked().toMutableMap()
+        map.remove(deviceId)
+        prefs.edit().putString(KEY_BLOCKED, gson.toJson(map)).apply()
+    }
+
+    /**
+     * 「拉黑我的」设备集合：对方把我拉黑时记录。
+     * 用于本机扫描过滤（对方不希望被我看见）和操作拦截。
+     * 注意：这与本机黑名单是两个独立集合——A 拉黑 B 不应导致 C 也拉黑 B，
+     * 被拉黑一方也不自动反向拉黑。
+     */
+    fun getBlockedBy(): Set<String> {
+        val json = prefs.getString(KEY_BLOCKED_BY, null) ?: return emptySet()
         return runCatching {
             gson.fromJson<Set<String>>(json, object : TypeToken<Set<String>>() {}.type)
         }.getOrNull() ?: emptySet()
     }
 
-    fun blockDevice(deviceId: String) {
+    fun addBlockedBy(deviceId: String) {
         prefs.edit()
-            .putString(KEY_BLOCKED, gson.toJson(getBlockedDevices() + deviceId))
+            .putString(KEY_BLOCKED_BY, gson.toJson(getBlockedBy() + deviceId))
             .apply()
     }
 
-    fun unblockDevice(deviceId: String) {
+    fun removeBlockedBy(deviceId: String) {
         prefs.edit()
-            .putString(KEY_BLOCKED, gson.toJson(getBlockedDevices() - deviceId))
+            .putString(KEY_BLOCKED_BY, gson.toJson(getBlockedBy() - deviceId))
             .apply()
     }
 
@@ -163,6 +213,7 @@ class LanSettings(context: Context) {
         private const val KEY_TOKEN = "pairing_token"
         private const val KEY_PAIRED = "paired_devices"
         private const val KEY_BLOCKED = "blocked_devices"
+        private const val KEY_BLOCKED_BY = "blocked_by_devices"
         private const val KEY_LAST_SYNC = "last_sync_"
         private const val KEY_PORT = "server_port"
         const val DEFAULT_PORT = 8765

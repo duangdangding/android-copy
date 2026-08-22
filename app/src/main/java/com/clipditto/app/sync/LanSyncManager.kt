@@ -68,9 +68,20 @@ object LanSyncManager {
                 pairApprovalUiHandler?.invoke(requester)
             },
             onUnpaired = { deviceId ->
-                // 对方主动通知取消配对：本地立即解除并拉黑，列表状态即时同步
+                // 对方主动解除配对/拉黑本机：本地解除配对，并记入 blockedBy
+                // （扫描时隐藏对方、操作拦截）。注意：不反向拉黑对方——
+                // A 拉黑 B 不应导致 B 的黑名单出现 A，更不能扩散到第三方 C。
                 settings.removePairedDevice(deviceId)
-                settings.blockDevice(deviceId)
+                settings.addBlockedBy(deviceId)
+                refreshDevices()
+            },
+            onUnblocked = { deviceId ->
+                settings.removeBlockedBy(deviceId)
+                refreshDevices()
+            },
+            onBlockedBy = { deviceId ->
+                // 经回连验证确实被对方拉黑：记录 blockedBy，列表隐藏对方
+                settings.addBlockedBy(deviceId)
                 refreshDevices()
             }
         )
@@ -151,16 +162,17 @@ object LanSyncManager {
 
     private fun mergeAndPublish(online: List<LanDevice>) {
         val paired = settings.getPairedDevices()
+        val blocked = settings.getBlockedDevices() + settings.getBlockedBy()
         val merged = mutableMapOf<String, LanDevice>()
-        // 先放配对设备（默认离线）
-        paired.values.forEach { p ->
+        // 先放配对设备（默认离线）；黑名单设备不进列表
+        paired.values.filter { it.deviceId !in blocked }.forEach { p ->
             merged[p.deviceId] = p.copy(
                 online = false,
                 lastSync = settings.getLastSync(p.deviceId)
             )
         }
-        // 在线设备覆盖/补充
-        online.forEach { o ->
+        // 在线设备覆盖/补充；黑名单设备不进列表
+        online.filter { it.deviceId !in blocked }.forEach { o ->
             val p = paired[o.deviceId]
             merged[o.deviceId] = if (p != null) {
                 o.copy(paired = true, token = p.token,
@@ -193,7 +205,14 @@ object LanSyncManager {
         settings.removePairedDevice(deviceId)
         // 拉黑对方：之后它的同步请求会被本机服务端明确拒绝（unpaired），
         // 对方同步时会自动把自己这边的状态改为未配对
-        settings.blockDevice(deviceId)
+        settings.blockDevice(
+            deviceId,
+            device?.displayName ?: "",
+            device?.model,
+            token = device?.token,
+            host = device?.host,
+            port = device?.port ?: 0
+        )
         refreshDevices()
         // 主动通知对方立即解除配对（对方不在线则静默失败，被动流程兜底）
         device?.takeIf { it.host != null && it.token != null }?.let { d ->
@@ -201,13 +220,56 @@ object LanSyncManager {
         }
     }
 
+    /** 把设备加入黑名单（含未配对设备）：无法对它操作，它也无法扫描/操作本机 */
+    fun blockDevice(device: LanDevice) {
+        settings.removePairedDevice(device.deviceId)
+        settings.blockDevice(
+            device.deviceId, device.displayName, device.model,
+            token = device.token, host = device.host, port = device.port
+        )
+        refreshDevices()
+        // 通知对方：
+        // - 有配对码（已配对过）→ /unpair 通知，对方记录 blockedBy
+        // - 无配对码（未配对）→ /blocked 通知（免配对码，对方回连验证后生效）
+        val host = device.host
+        if (host != null) {
+            scope.launch {
+                runCatching {
+                    if (device.token != null) client.notifyUnpair(device)
+                    else client.notifyBlocked(host, device.port)
+                }
+            }
+        }
+    }
+
+    /** 移出黑名单：本地解除，并尽力通知对方恢复（对方扫描时也会自愈） */
+    fun unblockDevice(deviceId: String) {
+        val info = settings.getBlocked()[deviceId]
+        settings.unblockDevice(deviceId)
+        refreshDevices()
+        if (info?.token != null && info.host != null) {
+            val d = LanDevice(
+                deviceId = deviceId, name = info.name,
+                host = info.host, port = info.port, token = info.token
+            )
+            scope.launch { runCatching { client.notifyUnblocked(d) } }
+        }
+    }
+
+    fun getBlockedList(): Map<String, LanSettings.BlockedInfo> = settings.getBlocked()
+
     // ---------------- 同步 ----------------
 
     /** 同步结果统计 */
     data class SyncResult(val added: Int, val skipped: Int)
 
+    /** 目标设备在本机黑名单中 */
+    class BlockedException : Exception("blocked")
+
     /** 手动同步一台设备。需要设备已配对（持有配对码）且在线。 */
     suspend fun syncDevice(device: LanDevice): SyncResult = withContext(Dispatchers.IO) {
+        if (device.deviceId in settings.getBlockedDevices()) throw BlockedException()
+        if (device.deviceId in settings.getBlockedBy()) throw BlockedByException()
         if (device.host == null) error("设备离线")
         val token = device.token ?: throw NeedPairingException()
         _syncing.value = _syncing.value + device.deviceId
@@ -361,6 +423,8 @@ object LanSyncManager {
         object SharingOff : PairError()
         object Rejected : PairError()
         object NeedConfirm : PairError()
+        object Blocked : PairError()
+        object BlockedBy : PairError()
         data class ConnectFail(val detail: String) : PairError()
     }
 
@@ -370,6 +434,8 @@ object LanSyncManager {
      */
     suspend fun pair(device: LanDevice, token: String): PairError? =
         withContext(Dispatchers.IO) {
+            if (device.deviceId in settings.getBlockedDevices()) return@withContext PairError.Blocked
+            if (device.deviceId in settings.getBlockedBy()) return@withContext PairError.BlockedBy
             // 用最新发现的设备信息（地址可能已变化）
             val fresh = discovery.discovered.value
                 .firstOrNull { it.deviceId == device.deviceId } ?: device

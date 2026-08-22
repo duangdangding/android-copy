@@ -241,9 +241,18 @@ class LanDiscovery(private val context: Context, private val settings: LanSettin
         val ports = listOf(settings.serverPort, LanSettings.DEFAULT_PORT).distinct()
         ports.forEach { port ->
             runCatching { client.fetchInfo(ip, port, timeoutMs = 2_000) }
+                .onFailure { e ->
+                    // 被对方拉黑：记录 blockedBy（对方 /info 的 403 带 deviceId）
+                    (e as? BlockedByException)?.blockedByDeviceId?.let { id ->
+                        settings.addBlockedBy(id)
+                        onlineDevices.remove(id)
+                        publish()
+                    }
+                }
                 .getOrNull()?.let { info ->
                     val deviceId = info.get("deviceId")?.asString ?: return@let
                     if (deviceId == settings.deviceId) return@let
+                    healBlockedBy(deviceId)
                     val device = LanDevice(
                         deviceId = deviceId,
                         name = info.get("name")?.asString ?: ip,
@@ -325,7 +334,19 @@ class LanDiscovery(private val context: Context, private val settings: LanSettin
 
             // 优先用 HTTP /info 校准（部分机型 TXT 拿不到）
             executor.execute {
-                val viaHttp = runCatching { client.fetchInfo(host, port) }.getOrNull()
+                val result = runCatching { client.fetchInfo(host, port) }
+                val blockedBy = result.exceptionOrNull() as? BlockedByException
+                if (blockedBy != null) {
+                    // 对方明确拒绝（我被拉黑）：记录 blockedBy，并从列表移除该设备
+                    val id = blockedBy.blockedByDeviceId ?: txtId
+                    if (id != null && id != settings.deviceId) {
+                        settings.addBlockedBy(id)
+                        onlineDevices.remove(id)
+                        publish()
+                    }
+                    return@execute
+                }
+                val viaHttp = result.getOrNull()
                 when {
                     viaHttp != null -> {
                         val deviceId = viaHttp.get("deviceId")?.asString ?: return@execute
@@ -333,6 +354,7 @@ class LanDiscovery(private val context: Context, private val settings: LanSettin
                             _stats.value = _stats.value.copy(skipSelf = _stats.value.skipSelf + 1)
                             return@execute
                         }
+                        healBlockedBy(deviceId)  // /info 通了说明对方已不再拉黑本机
                         addOrUpdate(
                             serviceName, LanDevice(
                                 deviceId = deviceId,
@@ -373,9 +395,19 @@ class LanDiscovery(private val context: Context, private val settings: LanSettin
     }
 
     private fun addOrUpdate(serviceName: String, device: LanDevice) {
+        // 本机黑名单设备、以及"拉黑了本机"的设备都不出现在扫描结果里
+        if (device.deviceId in settings.getBlockedDevices()) return
+        if (device.deviceId in settings.getBlockedBy()) return
         serviceNameToId[serviceName] = device.deviceId
         onlineDevices[device.deviceId] = device
         publish()
+    }
+
+    /** 对方 /info 返回 200 说明已不再拉黑本机：自愈清除 blockedBy 记录 */
+    private fun healBlockedBy(deviceId: String) {
+        if (deviceId in settings.getBlockedBy()) {
+            settings.removeBlockedBy(deviceId)
+        }
     }
 
     private fun publish() {

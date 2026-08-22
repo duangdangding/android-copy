@@ -37,7 +37,11 @@ class LanSyncServer(
      */
     private val pairApproval: (LanDevice) -> Boolean? = { null },
     /** 收到对方的解除配对通知时回调（参数为对方 deviceId） */
-    private val onUnpaired: (String) -> Unit = {}
+    private val onUnpaired: (String) -> Unit = {},
+    /** 收到对方"已把你移出黑名单"通知时回调（参数为对方 deviceId） */
+    private val onUnblocked: (String) -> Unit = {},
+    /** 收到"你已被对方拉黑"通知（通过回连验证后）回调 */
+    private val onBlockedBy: (String) -> Unit = {}
 ) {
     private val gson = Gson()
     private val pool = Executors.newCachedThreadPool()
@@ -109,9 +113,11 @@ class LanSyncServer(
             val clientIp = c.inetAddress?.hostAddress ?: ""
 
             when (path) {
-                "/info" -> handleInfo(output)
+                "/info" -> handleInfo(output, headers)
                 "/pair" -> handlePair(output, headers, clientIp)
                 "/unpair" -> handleUnpair(output, headers)
+                "/unblocked" -> handleUnblocked(output, headers)
+                "/blocked" -> handleBlockedNotice(output, headers, clientIp)
                 "/clips" -> handleClips(output, headers, query, clientIp)
                 "/file" -> handleFile(output, headers, query, clientIp)
                 else -> respond(output, 404, "text/plain", "Not Found")
@@ -121,7 +127,20 @@ class LanSyncServer(
 
     // ---------------- 路由处理 ----------------
 
-    private fun handleInfo(output: OutputStream) {
+    private fun handleInfo(output: OutputStream, headers: Map<String, String>) {
+        // 黑名单设备连 /info 都拿不到：对方扫描时无法确认本机存在。
+        // 响应里带上本机信息，让对方知道"是被拉黑了"，从而在其本地隐藏本机。
+        val requester = headers["x-device-id"]
+        if (requester != null && requester in settings.getBlockedDevices()) {
+            val json = JsonObject().apply {
+                addProperty("error", "blocked")
+                addProperty("deviceId", settings.deviceId)
+                addProperty("name", settings.deviceName)
+                addProperty("model", settings.deviceModel)
+            }
+            respond(output, 403, "application/json", gson.toJson(json))
+            return
+        }
         val json = JsonObject().apply {
             addProperty("deviceId", settings.deviceId)
             addProperty("name", settings.deviceName)
@@ -233,6 +252,54 @@ class LanSyncServer(
         Log.d(TAG, "收到对方解除配对通知: $deviceId")
         onUnpaired(deviceId)
         respond(output, 200, "application/json", """{"result":"ok"}""")
+    }
+
+    /** 对方通知"已把你移出黑名单"：清除 blockedBy 记录，恢复可见/可操作 */
+    private fun handleUnblocked(output: OutputStream, headers: Map<String, String>) {
+        val token = headers["x-token"]
+        if (token != settings.pairingToken) {
+            respond(output, 401, "application/json", """{"error":"bad_token"}""")
+            return
+        }
+        val deviceId = headers["x-device-id"]
+        if (deviceId.isNullOrBlank() || deviceId == settings.deviceId) {
+            respond(output, 400, "application/json", """{"error":"bad_request"}""")
+            return
+        }
+        Log.d(TAG, "收到对方移出黑名单通知: $deviceId")
+        onUnblocked(deviceId)
+        respond(output, 200, "application/json", """{"result":"ok"}""")
+    }
+
+    /**
+     * 对方（可能未配对）通知"你已被我拉黑"。无需配对码，但为防止伪造，
+     * 回连对方 /info 验证确实被拒（403 blocked）后才生效。
+     */
+    private fun handleBlockedNotice(
+        output: OutputStream,
+        headers: Map<String, String>,
+        clientIp: String
+    ) {
+        val deviceId = headers["x-device-id"]
+        val port = headers["x-my-port"]?.toIntOrNull() ?: 0
+        if (deviceId.isNullOrBlank() || deviceId == settings.deviceId || port <= 0) {
+            respond(output, 400, "application/json", """{"error":"bad_request"}""")
+            return
+        }
+        val verified = try {
+            // 对方 /info 返回 200：说明对方没拉黑本机，此通知是伪造的
+            LanSyncClient(settings).fetchInfo(clientIp, port, timeoutMs = 2_000)
+            false
+        } catch (e: BlockedByException) {
+            true   // 403 blocked：确认属实
+        } catch (e: Exception) {
+            false  // 连不上对方，无法验证，保守忽略
+        }
+        if (verified) {
+            Log.d(TAG, "确认被 $deviceId 拉黑（已回连验证）")
+            onBlockedBy(deviceId)
+        }
+        respond(output, 200, "application/json", """{"result":"ok","verified":$verified}""")
     }
 
     /** 从请求头构造请求方设备信息；缺少必要字段返回 null */

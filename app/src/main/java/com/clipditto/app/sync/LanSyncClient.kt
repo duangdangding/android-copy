@@ -22,6 +22,9 @@ class PairNeedConfirmException : Exception("need_confirm")
 /** 对方已取消与本机的配对（本机被拉黑） */
 class UnpairedException : Exception("unpaired")
 
+/** 对方把本机加入了黑名单。deviceId 已知时携带（/info 的 403 响应里有） */
+class BlockedByException(val blockedByDeviceId: String? = null) : Exception("blocked")
+
 /**
  * 局域网同步客户端：向其他设备的 [LanSyncServer] 拉取剪贴板内容。
  *
@@ -40,8 +43,18 @@ class LanSyncClient(
     fun fetchInfo(host: String, port: Int, timeoutMs: Int = 5_000): JsonObject {
         val conn = connect(host, port, "/info", token = null, timeoutMs = timeoutMs)
         try {
-            check(conn.responseCode == 200) { "info http ${conn.responseCode}" }
-            return gson.fromJson(readText(conn), JsonObject::class.java)
+            when (conn.responseCode) {
+                200 -> return gson.fromJson(readText(conn), JsonObject::class.java)
+                403 -> {
+                    // /info 的 403 只可能是"被对方拉黑"，响应体带对方 deviceId
+                    val body = runCatching {
+                        conn.errorStream?.bufferedReader()?.use { it.readText() }
+                            ?.let { gson.fromJson(it, JsonObject::class.java) }
+                    }.getOrNull()
+                    throw BlockedByException(body?.get("deviceId")?.asString)
+                }
+                else -> error("info http ${conn.responseCode}")
+            }
         } finally {
             conn.disconnect()
         }
@@ -129,6 +142,31 @@ class LanSyncClient(
         }
     }
 
+    /** 主动通知对方：本机已把你移出黑名单 */
+    fun notifyUnblocked(device: LanDevice) {
+        val conn = connect(
+            device.host!!, device.port, "/unblocked", token = device.token
+        )
+        try {
+            conn.responseCode
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    /**
+     * 主动通知对方"你已被本机拉黑"（无需配对码，供未配对设备使用）。
+     * 对方会回连本机 /info 验证属实后才生效，防止伪造。
+     */
+    fun notifyBlocked(host: String, port: Int) {
+        val conn = connect(host, port, "/blocked", token = null)
+        try {
+            conn.responseCode
+        } finally {
+            conn.disconnect()
+        }
+    }
+
     private fun connect(
         host: String,
         port: Int,
@@ -164,13 +202,17 @@ class LanSyncClient(
     private fun readText(conn: HttpURLConnection): String =
         conn.inputStream.bufferedReader().use { it.readText() }
 
-    /** 解析 403 响应体：区分"对方关了共享"和"对方取消了配对（本机被拉黑）" */
+    /** 解析 403 响应体：区分"对方关了共享"/"对方取消了配对"/"对方拉黑了本机" */
     private fun forbidden(conn: HttpURLConnection): Exception {
         val err = runCatching {
             conn.errorStream?.bufferedReader()?.use { it.readText() }
                 ?.let { gson.fromJson(it, JsonObject::class.java) }
                 ?.get("error")?.asString
         }.getOrNull()
-        return if (err == "unpaired") UnpairedException() else SharingOffException()
+        return when (err) {
+            "unpaired" -> UnpairedException()
+            "blocked" -> BlockedByException()
+            else -> SharingOffException()
+        }
     }
 }

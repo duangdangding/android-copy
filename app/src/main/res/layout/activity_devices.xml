@@ -125,6 +125,15 @@
             android:textSize="13sp" />
 
         <TextView
+            android:id="@+id/tvBlacklist"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingVertical="6dp"
+            android:text="黑名单：0 台（点击管理）"
+            android:textColor="#B00020"
+            android:textSize="13sp" />
+
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:paddingVertical="4dp"
