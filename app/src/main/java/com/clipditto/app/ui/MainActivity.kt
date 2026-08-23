@@ -154,6 +154,8 @@ class MainActivity : AppCompatActivity() {
                 "Shizuku 免打扰读取：服务未运行（点击打开）"
             !ShizukuClipboard.isPermissionGranted() ->
                 "Shizuku 免打扰读取：未授权（点击授权）"
+            ShizukuClipboard.isChannelBroken() ->
+                "Shizuku 免打扰读取：读取失败已回退（点击重试）"
             else -> "Shizuku 免打扰读取：✅ 已启用"
         }
     }
@@ -170,6 +172,11 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             !ShizukuClipboard.isPermissionGranted() -> ShizukuClipboard.requestPermission()
+            ShizukuClipboard.isChannelBroken() -> {
+                ShizukuClipboard.resetChannel()
+                Toast.makeText(this, "已重试 Shizuku 通道", Toast.LENGTH_SHORT).show()
+                refreshShizukuButton()
+            }
             else -> Toast.makeText(this, "Shizuku 读取已启用，复制监听不再抢焦点", Toast.LENGTH_SHORT).show()
         }
     }

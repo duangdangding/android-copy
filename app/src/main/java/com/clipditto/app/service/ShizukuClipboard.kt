@@ -33,6 +33,13 @@ object ShizukuClipboard {
     @Volatile
     private var binding = false
 
+    /** 连续读取失败次数；达到阈值后熔断本次会话的 Shizuku 通道，回退焦点读取 */
+    @Volatile
+    private var consecutiveFailures = 0
+
+    @Volatile
+    private var channelBroken = false
+
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             Log.d(TAG, "Shizuku 桥接服务已连接")
@@ -61,7 +68,8 @@ object ShizukuClipboard {
         .daemon(false)
         .processNameSuffix("shizuku_clipboard")
         .debuggable(BuildConfig.DEBUG)
-        .version(1)
+        // 桥接服务实现有变更时递增，Shizuku 会用新版本重启 shell 进程
+        .version(2)
 
     /** App 启动时调用一次：监听 Shizuku binder 的到来/死亡 */
     fun init() {
@@ -84,6 +92,19 @@ object ShizukuClipboard {
     /** shell 桥接服务是否已连接（连接是异步的） */
     fun isBound(): Boolean = bridge != null
 
+    /** 通道是否因连续读取失败被熔断 */
+    fun isChannelBroken(): Boolean = channelBroken
+
+    /** 通道当前是否可用（已授权且未熔断）——读取路径的入口闸门 */
+    fun isChannelActive(): Boolean = isPermissionGranted() && !channelBroken
+
+    /** 手动重置熔断状态（用户在界面上点击重试时调用） */
+    fun resetChannel() {
+        channelBroken = false
+        consecutiveFailures = 0
+        bind()
+    }
+
     /** 请求 Shizuku 授权（弹出 Shizuku 授权对话框） */
     fun requestPermission() {
         if (isServerRunning() && !isPermissionGranted()) {
@@ -104,18 +125,28 @@ object ShizukuClipboard {
             }
     }
 
-    /** 以 shell 身份读剪贴板；未就绪/未连接/失败时返回 null，由调用方决定回退 */
+    /**
+     * 以 shell 身份读剪贴板；未就绪/未连接/失败时返回 null，由调用方决定回退。
+     * 失败可能是 ROM 限制了 shell 读取：连续失败达到阈值后熔断，
+     * 之后的读取请求一律返回 null 且不再尝试，调用方走原来的焦点读取路径。
+     */
     fun readClipboard(): ClipData? {
-        if (!isPermissionGranted()) return null
+        if (channelBroken || !isPermissionGranted()) return null
         val b = bridge ?: run {
             bind()
             return null
         }
         return runCatching { b.readClipboard() }
+            .onSuccess { consecutiveFailures = 0 }
             .onFailure {
                 Log.w(TAG, "Shizuku 读取失败: ${it.message}")
                 bridge = null
-                bind()
+                if (++consecutiveFailures >= 3) {
+                    channelBroken = true
+                    Log.w(TAG, "Shizuku 通道连续读取失败，本次会话停用，回退焦点读取")
+                } else {
+                    bind()
+                }
             }
             .getOrNull()
     }
