@@ -6,7 +6,7 @@ import android.content.Context
 import android.os.Build
 import android.os.IBinder
 import android.os.Parcel
-import android.os.UserHandle
+import android.os.Process
 import com.clipditto.app.IClipboardBridge
 import rikka.shizuku.SystemServiceHelper
 
@@ -57,7 +57,7 @@ class ClipboardShellService() : IClipboardBridge.Stub() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 data.writeString(null) // attributionTag，API 33 加入
             }
-            data.writeInt(UserHandle.myUserId())
+            data.writeInt(Process.myUid() / 100000) // userId = uid 的用户号
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 data.writeInt(DEVICE_ID_DEFAULT) // deviceId，API 34 加入
             }
