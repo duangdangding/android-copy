@@ -44,6 +44,8 @@ android {
     buildFeatures {
         // Shizuku 用户服务参数需要 BuildConfig.APPLICATION_ID / DEBUG
         buildConfig true
+        // AGP 8 起 AIDL 默认关闭；Shizuku 桥接接口 IClipboardBridge 需要
+        aidl true
     }
 }
 
