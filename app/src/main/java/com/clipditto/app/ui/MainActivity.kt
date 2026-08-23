@@ -183,6 +183,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 主界面打开时收起悬浮列表面板，避免它盖在主界面上层
+        ClipboardService.instance?.dismissPanel()
         refreshToggleButton()
         refreshStatus()
         refreshStorage()
