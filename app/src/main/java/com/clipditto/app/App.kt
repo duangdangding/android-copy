@@ -11,6 +11,8 @@ class App : Application() {
         super.onCreate()
         instance = this
         createNotificationChannel()
+        // Shizuku 剪贴板通道：监听 binder 到来/死亡，可用时自动绑定
+        runCatching { com.clipditto.app.service.ShizukuClipboard.init() }
         // 局域网同步：按开关状态恢复服务/发现
         runCatching { LanSyncManager.init(this) }
     }

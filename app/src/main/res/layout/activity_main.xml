@@ -104,6 +104,13 @@
         android:layout_marginHorizontal="8dp"
         android:text="局域网同步（设备列表）" />
 
+    <Button
+        android:id="@+id/btnShizuku"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="8dp"
+        android:text="Shizuku 免打扰读取：检测中…" />
+
     <EditText
         android:id="@+id/etSearch"
         android:layout_width="match_parent"

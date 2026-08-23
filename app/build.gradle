@@ -41,6 +41,10 @@ android {
     kotlinOptions {
         jvmTarget = '17'
     }
+    buildFeatures {
+        // Shizuku 用户服务参数需要 BuildConfig.APPLICATION_ID / DEBUG
+        buildConfig true
+    }
 }
 
 dependencies {
@@ -56,4 +60,9 @@ dependencies {
 
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
     implementation 'com.google.code.gson:gson:2.11.0'
+
+    // Shizuku：以 shell 身份读剪贴板，免焦点悬浮窗
+    def shizuku_version = "13.1.5"
+    implementation "dev.rikka.shizuku:api:$shizuku_version"
+    implementation "dev.rikka.shizuku:provider:$shizuku_version"
 }

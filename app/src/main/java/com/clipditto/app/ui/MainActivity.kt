@@ -33,10 +33,12 @@ import com.clipditto.app.data.ClipType
 import com.clipditto.app.service.BootReceiver
 import com.clipditto.app.service.ClipboardService
 import com.clipditto.app.service.PasteAccessibilityService
+import com.clipditto.app.service.ShizukuClipboard
 import com.clipditto.app.util.FuzzySearch
 import com.clipditto.app.util.StorageStats
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import rikka.shizuku.Shizuku
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -121,7 +123,55 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, DevicesActivity::class.java))
         }
 
+        findViewById<Button>(R.id.btnShizuku).setOnClickListener { onShizukuClick() }
+        Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
+
         requestNotificationPermissionIfNeeded()
+    }
+
+    /** Shizuku 授权结果回调：授权成功后立即绑定桥接服务并刷新按钮 */
+    private val shizukuPermissionListener =
+        Shizuku.OnRequestPermissionResultListener { _, grantResult ->
+            if (grantResult == PackageManager.PERMISSION_GRANTED) {
+                ShizukuClipboard.bind()
+                Toast.makeText(this, "Shizuku 已授权，读取剪贴板不再抢焦点", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Shizuku 授权被拒绝", Toast.LENGTH_SHORT).show()
+            }
+            refreshShizukuButton()
+        }
+
+    override fun onDestroy() {
+        Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
+        super.onDestroy()
+    }
+
+    // ---------------- Shizuku 免打扰读取 ----------------
+
+    private fun refreshShizukuButton() {
+        findViewById<Button>(R.id.btnShizuku).text = when {
+            !ShizukuClipboard.isServerRunning() ->
+                "Shizuku 免打扰读取：服务未运行（点击打开）"
+            !ShizukuClipboard.isPermissionGranted() ->
+                "Shizuku 免打扰读取：未授权（点击授权）"
+            else -> "Shizuku 免打扰读取：✅ 已启用"
+        }
+    }
+
+    private fun onShizukuClick() {
+        when {
+            !ShizukuClipboard.isServerRunning() -> {
+                val launch = packageManager.getLaunchIntentForPackage(ShizukuClipboard.SHIZUKU_PACKAGE)
+                if (launch != null) {
+                    startActivity(launch)
+                    Toast.makeText(this, "请先在 Shizuku 中启动服务", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this, "未安装 Shizuku，请先安装并启动", Toast.LENGTH_LONG).show()
+                }
+            }
+            !ShizukuClipboard.isPermissionGranted() -> ShizukuClipboard.requestPermission()
+            else -> Toast.makeText(this, "Shizuku 读取已启用，复制监听不再抢焦点", Toast.LENGTH_SHORT).show()
+        }
     }
 
     override fun onResume() {
@@ -130,6 +180,7 @@ class MainActivity : AppCompatActivity() {
         refreshStatus()
         refreshStorage()
         refreshMaxRecordsBtn()
+        refreshShizukuButton()
     }
 
     /** 按钮上直接显示当前上限设置 */

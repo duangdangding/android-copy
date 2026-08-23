@@ -124,6 +124,18 @@ class ClipboardService : Service() {
             dirtyWhilePaused = true
             return
         }
+        // Shizuku 通道：读剪贴板不抢窗口焦点，输入法/选区/系统弹窗全部无需避让，
+        // 直接延迟读取兜底（复制事件先于剪贴板写入）
+        if (ShizukuClipboard.isPermissionGranted()) {
+            val now0 = SystemClock.uptimeMillis()
+            if (now0 - lastPollAt < 350) return
+            lastPollAt = now0
+            handler.postDelayed({
+                pollClipboard()
+                handler.postDelayed({ if (!lastPollFoundNew) pollClipboard() }, 900)
+            }, 300)
+            return
+        }
         when (signal) {
             CopySignal.SELECTION -> {
                 scheduleSettledPoll()
@@ -312,6 +324,16 @@ class ClipboardService : Service() {
     private var pendingRead: (() -> Unit)? = null
 
     private fun readClipboardSafely(onRead: (ClipData?) -> Unit = { handleClip(it) }) {
+        // Shizuku 通道：以 shell 身份读取，完全不抢窗口焦点，无任何界面副作用
+        if (ShizukuClipboard.isPermissionGranted()) {
+            val clip = ShizukuClipboard.readClipboard()
+            // 已连接时 null 即"剪贴板为空"，直接结束；未连接（异步绑定中）才回退焦点读取
+            if (clip != null || ShizukuClipboard.isBound()) {
+                Log.d(TAG, "Shizuku 通道读取：${if (clip == null) "空" else "items=${clip.itemCount}"}")
+                onRead(clip)
+                return
+            }
+        }
         // Android 10 以下可直接读取；10+ 需要窗口焦点，用 1px 不可见聚焦悬浮窗取巧
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             onRead(clipboard.primaryClip)
