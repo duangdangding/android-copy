@@ -675,6 +675,8 @@ class ClipboardService : Service() {
 
         view.findViewById<Button>(R.id.btnPanelClose).setOnClickListener { hidePanel() }
         view.findViewById<Button>(R.id.btnPanelApp).setOnClickListener {
+            // 打开主界面前先收起面板，避免悬浮列表盖在主界面上层
+            hidePanel()
             startActivity(
                 Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
@@ -800,6 +802,11 @@ class ClipboardService : Service() {
         panelParams = null
         panelAdapter = null
         panelEmptyView = null
+    }
+
+    /** 外部请求收起面板（如主界面打开时）；服务与界面同进程且都在主线程，直接移除悬浮窗 */
+    fun dismissPanel() {
+        if (panelView != null) hidePanel()
     }
 
     // ---------------- 点击记录 -> 粘贴 ----------------
