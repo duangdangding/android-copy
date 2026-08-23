@@ -103,28 +103,114 @@ class ClipboardService : Service() {
     @Volatile
     private var lastPollAt = 0L
 
+    /** 上一次轮询是否读到了新内容：命中则跳过一次补读，减少焦点悬浮窗的添加/移除次数 */
+    @Volatile
+    private var lastPollFoundNew = false
+
     /**
-     * 无障碍服务检测到可能的复制行为（点复制菜单/选中文字/复制成功 Toast）时回调。
+     * 无障碍服务检测到可能的复制行为时回调。
      * 部分 ROM（如 HyperOS）不下发系统剪贴板变化回调，只能靠事件驱动轮询兜底。
+     *
+     * 按信号强度处理：
+     * - [CopySignal.ACTION]（点复制项/复制 Toast）：复制已发生，立即读取。
+     *   连续复制时每条都能被捕获；仅键盘正在弹出动画时推迟，避免打断动画
+     * - [CopySignal.SELECTION]（选中文字）：剪贴板尚未写入，且操作菜单正在显示，
+     *   立即抢焦点会闪屏——推迟到选区稳定后合并读取
+     * - [CopySignal.WEAK_WINDOW]（窗口切换/弹窗）：可能只是弹了个输入框，
+     *   键盘弹出或可见时放弃；选区活跃时推迟
      */
-    private fun onPossibleClipboardCopy() {
+    private fun onPossibleClipboardCopy(signal: CopySignal) {
         if (!isMonitorEnabled()) {
             dirtyWhilePaused = true
             return
         }
+        when (signal) {
+            CopySignal.SELECTION -> {
+                scheduleSettledPoll()
+                return
+            }
+            CopySignal.WEAK_WINDOW -> {
+                if (PasteAccessibilityService.imeAnimatingIn() ||
+                    PasteAccessibilityService.imeVisible() ||
+                    PasteAccessibilityService.systemDialogRecently()
+                ) {
+                    Log.d(TAG, "输入法/系统弹窗激活中，跳过弱信号轮询")
+                    return
+                }
+                if (PasteAccessibilityService.selectionRecently()) {
+                    scheduleSettledPoll()
+                    return
+                }
+            }
+            CopySignal.ACTION -> {
+                // 键盘正在弹出动画 / 系统弹窗（生物识别、应用锁）显示中：
+                // 推迟读取，避免打断（内容不会丢，稍后补读）
+                if (PasteAccessibilityService.imeAnimatingIn() ||
+                    PasteAccessibilityService.systemDialogRecently()
+                ) {
+                    scheduleSettledPoll()
+                    return
+                }
+                // 注意：ACTION 不因"选区活跃"推迟——点复制的瞬间菜单已关闭，
+                // 连续复制时每条都要立即读取，否则中间内容会被覆盖丢失
+            }
+        }
         val now = SystemClock.uptimeMillis()
-        if (now - lastPollAt < 800) return // 节流：800ms 内最多触发一轮
+        if (now - lastPollAt < 350) return // 节流：350ms 内最多触发一轮
         lastPollAt = now
-        // 复制事件先于剪贴板写入，延迟读两次提高命中率
-        handler.postDelayed({ pollClipboard() }, 400)
-        handler.postDelayed({ pollClipboard() }, 1300)
+        // 复制事件先于剪贴板写入，延迟读两次提高命中率；
+        // 第一次已读到新内容则第二次跳过（每次读取都要添加/移除焦点悬浮窗，可能打断输入法）。
+        // 延迟执行时再次检查：400ms 内键盘/系统弹窗可能刚弹出（对话框先弹、焦点后到）
+        handler.postDelayed({
+            if (PasteAccessibilityService.imeAnimatingIn() ||
+                PasteAccessibilityService.systemDialogRecently()
+            ) {
+                scheduleSettledPoll()
+                return@postDelayed
+            }
+            pollClipboard()
+            handler.postDelayed({
+                if (!lastPollFoundNew &&
+                    !PasteAccessibilityService.imeAnimatingIn() &&
+                    !PasteAccessibilityService.systemDialogRecently()
+                ) {
+                    pollClipboard()
+                }
+            }, 900)
+        }, 400)
+    }
+
+    /** 选区稳定后的合并读取：是否已排队 */
+    @Volatile
+    private var settledPollPending = false
+
+    /**
+     * 选区活跃/键盘弹出/系统弹窗（生物识别、应用锁）期间不抢焦点，
+     * 等稳定后合并读一次。到点时条件仍不满足则继续顺延。
+     * 键盘稳定打开（非动画中）不阻止读取——聊天 App 里键盘常驻时复制也要能捕获。
+     */
+    private fun scheduleSettledPoll() {
+        if (settledPollPending) return
+        settledPollPending = true
+        handler.postDelayed({
+            settledPollPending = false
+            if (PasteAccessibilityService.selectionRecently() ||
+                PasteAccessibilityService.imeAnimatingIn() ||
+                PasteAccessibilityService.systemDialogRecently()
+            ) {
+                scheduleSettledPoll() // 条件仍不满足，继续顺延
+                return@postDelayed
+            }
+            pollClipboard()
+        }, 2_100)
     }
 
     /** 读一次剪贴板，签名变了才走入库流程 */
     private fun pollClipboard() {
         readClipboardSafely { clip ->
             val sig = sigOf(clip)
-            if (sig != null && sig != lastHandledSig) {
+            lastPollFoundNew = sig != null && sig != lastHandledSig
+            if (lastPollFoundNew) {
                 Log.d(TAG, "轮询发现新内容，入库")
                 handleClip(clip)
             }
@@ -184,7 +270,7 @@ class ClipboardService : Service() {
         startForeground(NOTIFY_ID, buildNotification())
         clipboard.addPrimaryClipChangedListener(clipListener)
         // HyperOS/MIUI 上系统剪贴板回调可能不下发，改由无障碍事件驱动轮询兜底
-        PasteAccessibilityService.copyTrigger = { onPossibleClipboardCopy() }
+        PasteAccessibilityService.copyTrigger = { signal -> onPossibleClipboardCopy(signal) }
         showBall()
         Log.d(TAG, "服务已启动，剪贴板监听已注册")
         return START_STICKY
@@ -247,8 +333,10 @@ class ClipboardService : Service() {
         val params = WindowManager.LayoutParams(
             1, 1,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            // 不加 NOT_FOCUSABLE：需要焦点才能读剪贴板
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            // 不加 NOT_FOCUSABLE：需要焦点才能读剪贴板；
+            // NOT_TOUCHABLE：触摸直接穿透，1px 窗口绝不拦截下层 App 的点击
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
             alpha = 0f
