@@ -106,13 +106,15 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- Shizuku：以 shell 身份读剪贴板（免焦点悬浮窗） -->
+        <!-- Shizuku：以 shell 身份读剪贴板（免焦点悬浮窗）。
+             permission 必须是“授予 shell 但不授予普通应用”的权限（官方要求），
+             否则以 adb/shell 身份运行的 Shizuku 服务无法把 binder 送达本 App -->
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"
             android:enabled="true"
             android:exported="true"
             android:multiprocess="false"
-            android:permission="moe.shizuku.manager.permission.API_V23" />
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
     </application>
 </manifest>
