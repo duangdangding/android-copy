@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">剪贴板管家</string>
+    <string name="app_name">共享剪贴-卢</string>
     <string name="service_running">剪贴板监听中，点击悬浮球查看记录</string>
     <string name="accessibility_description">用于在输入框中直接粘贴剪贴板记录。开启后，点击悬浮列表中的文字记录即可自动粘贴到当前输入框。</string>
 </resources>

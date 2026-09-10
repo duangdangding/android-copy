@@ -89,6 +89,7 @@ object LanSyncManager {
         discovery = LanDiscovery(appContext, settings)
         applyState()
         watchDiscovery()
+        watchNetwork()
         startAutoSyncLoop()
     }
 
@@ -158,6 +159,40 @@ object LanSyncManager {
                 mergeAndPublish(online)
             }
         }
+    }
+
+    /**
+     * 网络变化自愈：WiFi 切换/断连重连后，NSD 会话、组播成员关系、
+     * beacon socket 都可能静默失效（系统不一定回调），这里统一重建。
+     */
+    private fun watchNetwork() {
+        val cm = appContext.getSystemService(Context.CONNECTIVITY_SERVICE)
+            as android.net.ConnectivityManager
+        var lastHandle = 0L
+        cm.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) = onNetworkChanged()
+            override fun onCapabilitiesChanged(
+                network: android.net.Network,
+                caps: android.net.NetworkCapabilities
+            ) = onNetworkChanged()
+
+            private fun onNetworkChanged() {
+                val now = System.currentTimeMillis()
+                if (now - lastHandle < 5_000) return  // 防抖：切换瞬间会连续回调
+                lastHandle = now
+                scope.launch {
+                    delay(1_500)  // 等新网络稳定
+                    Log.d(TAG, "网络变化，重建发现通道")
+                    if (settings.discoverable && server.isRunning) {
+                        discovery.unregisterService()
+                        discovery.registerService(server.port)
+                    }
+                    if (settings.autoSync || discoveryScreenActive) {
+                        discovery.restartDiscovery()
+                    }
+                }
+            }
+        })
     }
 
     private fun mergeAndPublish(online: List<LanDevice>) {

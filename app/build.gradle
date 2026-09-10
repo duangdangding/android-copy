@@ -16,7 +16,7 @@ android {
         // versionCode：整数，只能递增（1, 2, 3...），系统靠它判断"是不是新版本"
         // versionName：给人看的版本字符串，显示在应用信息里
         versionCode 10
-        versionName "3.0"
+        versionName "4.0"
     }
 
     // ===== 打包后的 APK 文件名 =====

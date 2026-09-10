@@ -79,9 +79,24 @@ class LanDiscovery(private val context: Context, private val settings: LanSettin
     // ---------------- UDP 广播兜底通道 ----------------
     // mDNS 在部分路由器/机型上会被拦截；开启「可被发现」的设备每 3 秒
     // 向局域网广播一个 beacon，扫描方监听固定端口即可发现，与 NSD 并行。
+    //
+    // 通道自愈设计：
+    // - 监听 socket 在「扫描中」或「可被发现」任一开启时保持运行，异常退出后
+    //   自动重建（旧实现 socket 死一次就永久失效，是"长时间搜不到"的主因）；
+    // - 扫描开始时主动发 query 包，在线设备收到后立即单播回应，不用等 3 秒周期；
+    // - beacon 发现的设备 15 秒没收到新 beacon 会被剔除，避免"幽灵在线"。
 
     @Volatile private var beaconSenderRunning = false
-    @Volatile private var beaconReceiverRunning = false
+    @Volatile private var beaconPort = 0
+    private var sendSocket: DatagramSocket? = null
+
+    /** 监听 socket 是否运行中（扫描或可被发现任一开启即为 true） */
+    @Volatile private var listenRunning = false
+    private val listenSockets = mutableListOf<DatagramSocket>()
+
+    /** beacon 发现的设备最后收到 beacon 的时间，用于超时剔除 */
+    private val lastBeaconSeen = mutableMapOf<String, Long>()
+    @Volatile private var watchdogRunning = false
 
     // ---------------- 广播本机 ----------------
 
@@ -139,7 +154,9 @@ class LanDiscovery(private val context: Context, private val settings: LanSettin
     fun startDiscovery() {
         discoveryWanted = true
         acquireMulticastLock()
-        startBeaconReceiver()  // beacon 通道与 NSD 解耦，NSD 挂了也能发现
+        updateBeaconListener()  // beacon 通道与 NSD 解耦，NSD 挂了也能发现
+        sendQuery()             // 主动询问：在线设备立即回应，不用等 3 秒 beacon 周期
+        startWatchdog()
         if (discoveryListener != null) return
         _rawFound.value = 0
         _stats.value = DiagStats()
@@ -221,7 +238,8 @@ class LanDiscovery(private val context: Context, private val settings: LanSettin
         discoveryListener = null
         _scanning.value = false
         releaseMulticastLock()
-        stopBeaconReceiver()
+        updateBeaconListener()
+        synchronized(lastBeaconSeen) { lastBeaconSeen.clear() }
         synchronized(resolving) { resolving.clear() }
         serviceNameToId.clear()
         onlineDevices.clear()
@@ -419,26 +437,31 @@ class LanDiscovery(private val context: Context, private val settings: LanSettin
 
     // ---------------- UDP beacon 实现 ----------------
 
+    /** 构造本机 beacon 报文 */
+    private fun buildBeaconJson(): ByteArray = Gson().toJson(JsonObject().apply {
+        addProperty("deviceId", settings.deviceId)
+        addProperty("name", settings.deviceName)
+        addProperty("model", settings.deviceModel)
+        addProperty("port", beaconPort)
+        addProperty("sharing", settings.sharing)
+    }).toByteArray(StandardCharsets.UTF_8)
+
     /** 「可被发现」开启时：每 3 秒广播一次本机信息（广播 + 组播双发） */
     private fun startBeaconSender(port: Int) {
+        beaconPort = port
         if (beaconSenderRunning) return
         beaconSenderRunning = true
+        updateBeaconListener()  // 可被发现方也要监听：用于回应扫描方的 query
         executor.execute {
-            val gson = Gson()
             val socket = runCatching {
                 DatagramSocket().apply { broadcast = true }
             }.getOrNull() ?: return@execute
+            sendSocket = socket
             // 广播地址 + 组播组（有的网络拦广播但放行组播，反之亦然，双发兜底）
-            val targets = broadcastAddresses().map { it to BEACON_PORT } +
-                (InetAddress.getByName(MULTICAST_GROUP) to MULTICAST_PORT)
             while (beaconSenderRunning) {
-                val json = gson.toJson(JsonObject().apply {
-                    addProperty("deviceId", settings.deviceId)
-                    addProperty("name", settings.deviceName)
-                    addProperty("model", settings.deviceModel)
-                    addProperty("port", port)
-                    addProperty("sharing", settings.sharing)
-                }).toByteArray(StandardCharsets.UTF_8)
+                val targets = broadcastAddresses().map { it to BEACON_PORT } +
+                    (InetAddress.getByName(MULTICAST_GROUP) to MULTICAST_PORT)
+                val json = buildBeaconJson()
                 targets.forEach { (addr, p) ->
                     runCatching {
                         socket.send(DatagramPacket(json, json.size, addr, p))
@@ -447,47 +470,106 @@ class LanDiscovery(private val context: Context, private val settings: LanSettin
                 Thread.sleep(3_000)
             }
             runCatching { socket.close() }
+            sendSocket = null
         }
     }
 
     private fun stopBeaconSender() {
         beaconSenderRunning = false
+        updateBeaconListener()
     }
 
-    /** 扫描开启时：同时监听广播 beacon（8766）和组播 beacon（8767） */
-    private fun startBeaconReceiver() {
-        if (beaconReceiverRunning) return
-        beaconReceiverRunning = true
-        // 广播监听
-        executor.execute {
-            val socket = runCatching {
-                DatagramSocket(null).apply {
-                    reuseAddress = true
-                    bind(java.net.InetSocketAddress(BEACON_PORT))
-                }
-            }.getOrNull() ?: return@execute
-            receiveLoop(socket)
+    /** 收到扫描方的 query：立即单播回一个 beacon，对方无需等 3 秒周期 */
+    private fun replyBeacon(target: InetAddress) {
+        val json = buildBeaconJson()
+        val shared = sendSocket
+        runCatching {
+            val s = shared ?: DatagramSocket().apply { broadcast = true }
+            s.send(DatagramPacket(json, json.size, target, BEACON_PORT))
+            if (shared == null) s.close()
         }
-        // 组播监听
+    }
+
+    /** 扫描开始时主动询问：广播 + 组播各发 3 次 query，提高到达率 */
+    private fun sendQuery() {
         executor.execute {
+            val json = """{"query":1}""".toByteArray(StandardCharsets.UTF_8)
             val socket = runCatching {
-                java.net.MulticastSocket(MULTICAST_PORT).apply {
-                    reuseAddress = true
-                    joinGroup(
-                        java.net.InetSocketAddress(
-                            InetAddress.getByName(MULTICAST_GROUP), MULTICAST_PORT
-                        ), null
-                    )
-                }
+                DatagramSocket().apply { broadcast = true }
             }.getOrNull() ?: return@execute
-            receiveLoop(socket)
+            val targets = broadcastAddresses().map { it to BEACON_PORT } +
+                (InetAddress.getByName(MULTICAST_GROUP) to MULTICAST_PORT)
+            repeat(3) { i ->
+                if (i > 0) Thread.sleep(500)
+                targets.forEach { (addr, p) ->
+                    runCatching {
+                        socket.send(DatagramPacket(json, json.size, addr, p))
+                    }
+                }
+            }
+            runCatching { socket.close() }
+        }
+    }
+
+    /** 「扫描中」或「可被发现」任一开启 → 保持监听；都关 → 释放监听 socket */
+    private fun updateBeaconListener() {
+        if (discoveryWanted || beaconSenderRunning) startBeaconListener()
+        else stopBeaconListener()
+    }
+
+    /** 同时监听广播通道（8766）和组播通道（8767）；异常退出自动重建 */
+    private fun startBeaconListener() {
+        if (listenRunning) return
+        listenRunning = true
+        startListenLoop("broadcast") {
+            DatagramSocket(null).apply {
+                reuseAddress = true
+                bind(java.net.InetSocketAddress(BEACON_PORT))
+            }
+        }
+        startListenLoop("multicast") {
+            java.net.MulticastSocket(MULTICAST_PORT).apply {
+                reuseAddress = true
+                joinGroup(
+                    java.net.InetSocketAddress(
+                        InetAddress.getByName(MULTICAST_GROUP), MULTICAST_PORT
+                    ),
+                    wifiInterface()  // 显式选 WiFi 网卡，避免 join 到流量接口
+                )
+            }
+        }
+    }
+
+    /**
+     * 单通道监听循环：socket 异常死亡后，只要仍需监听就 3 秒后重建。
+     * （旧实现 socket 死一次就永久失效，导致"长时间搜不到设备"）
+     */
+    private fun startListenLoop(name: String, binder: () -> DatagramSocket) {
+        executor.execute {
+            while (listenRunning) {
+                val socket = runCatching { binder() }.getOrNull()
+                if (socket == null) {
+                    if (!listenRunning) break
+                    Log.w(TAG, "beacon $name 通道 bind 失败，3 秒后重试")
+                    runCatching { Thread.sleep(3_000) }
+                    continue
+                }
+                synchronized(listenSockets) { listenSockets.add(socket) }
+                receiveLoop(socket)
+                runCatching { socket.close() }
+                synchronized(listenSockets) { listenSockets.remove(socket) }
+                if (listenRunning) {
+                    Log.w(TAG, "beacon $name 通道异常退出，3 秒后重建")
+                    runCatching { Thread.sleep(3_000) }
+                }
+            }
         }
     }
 
     private fun receiveLoop(socket: DatagramSocket) {
         val gson = Gson()
         val buf = ByteArray(2048)
-        while (beaconReceiverRunning) {
+        while (listenRunning) {
             val packet = DatagramPacket(buf, buf.size)
             try {
                 socket.receive(packet)
@@ -499,10 +581,20 @@ class LanDiscovery(private val context: Context, private val settings: LanSettin
                     String(packet.data, 0, packet.length, StandardCharsets.UTF_8),
                     JsonObject::class.java
                 )
+                // query 包：本机可被发现时立即单播回应
+                if (json.get("query")?.asBoolean == true) {
+                    if (beaconSenderRunning) replyBeacon(packet.address)
+                    return@runCatching
+                }
+                // 普通 beacon：仅在扫描时处理
+                if (!discoveryWanted) return@runCatching
                 val deviceId = json.get("deviceId")?.asString ?: return@runCatching
                 if (deviceId == settings.deviceId) return@runCatching  // 自己的广播
                 _stats.value = _stats.value.copy(beaconRx = _stats.value.beaconRx + 1)
                 val port = json.get("port")?.asInt ?: return@runCatching
+                synchronized(lastBeaconSeen) {
+                    lastBeaconSeen[deviceId] = System.currentTimeMillis()
+                }
                 addOrUpdate(
                     "beacon-$deviceId",
                     LanDevice(
@@ -517,21 +609,54 @@ class LanDiscovery(private val context: Context, private val settings: LanSettin
                 )
             }
         }
-        runCatching { socket.close() }
     }
 
-    private fun stopBeaconReceiver() {
-        beaconReceiverRunning = false
-        // 关掉接收：发空包到两个端口唤醒阻塞的 receive
-        listOf(BEACON_PORT, MULTICAST_PORT).forEach { p ->
-            runCatching {
-                val s = DatagramSocket()
-                val b = byteArrayOf(0)
-                s.send(DatagramPacket(b, b.size, InetAddress.getByName("127.0.0.1"), p))
-                s.close()
+    /** 关闭监听：直接 close socket 唤醒阻塞的 receive，循环看到 listenRunning=false 自然退出 */
+    private fun stopBeaconListener() {
+        listenRunning = false
+        val sockets = synchronized(listenSockets) { listenSockets.toList() }
+        sockets.forEach { runCatching { it.close() } }
+    }
+
+    /** 仅 beacon 发现的设备 15 秒没收到新 beacon → 剔除，避免"幽灵在线" */
+    private fun startWatchdog() {
+        if (watchdogRunning) return
+        watchdogRunning = true
+        executor.execute {
+            while (watchdogRunning && discoveryWanted) {
+                Thread.sleep(5_000)
+                val now = System.currentTimeMillis()
+                var changed = false
+                // 先快照 key 再逐个处理：addOrUpdate 在其他线程并发写入，不能边遍历边删
+                val ids = synchronized(onlineDevices) { onlineDevices.keys.toList() }
+                ids.forEach { id ->
+                    // 有 NSD 或手动来源的设备由各自机制管理，不动
+                    val hasOtherSource = serviceNameToId.any { (k, v) ->
+                        v == id && !k.startsWith("beacon-")
+                    }
+                    if (hasOtherSource) return@forEach
+                    val seen = synchronized(lastBeaconSeen) { lastBeaconSeen[id] }
+                        ?: return@forEach
+                    if (now - seen > 15_000) {
+                        Log.d(TAG, "beacon 超时剔除: $id")
+                        synchronized(onlineDevices) { onlineDevices.remove(id) }
+                        serviceNameToId.entries.removeIf { it.value == id }
+                        synchronized(lastBeaconSeen) { lastBeaconSeen.remove(id) }
+                        changed = true
+                    }
+                }
+                if (changed) publish()
             }
+            watchdogRunning = false
         }
     }
+
+    /** 本机局域网 IP 所在的网卡（组播 join 用） */
+    private fun wifiInterface(): java.net.NetworkInterface? = runCatching {
+        val ip = localIp() ?: return null
+        java.net.NetworkInterface.getNetworkInterfaces()?.toList()
+            ?.firstOrNull { ni -> ni.inetAddresses.toList().any { it.hostAddress == ip } }
+    }.getOrNull()
 
     /** 计算广播地址：255.255.255.255 + 当前子网广播地址 */
     private fun broadcastAddresses(): List<InetAddress> {

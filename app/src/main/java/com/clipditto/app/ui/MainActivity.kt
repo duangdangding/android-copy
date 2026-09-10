@@ -109,7 +109,7 @@ class MainActivity : AppCompatActivity() {
         btnToggle.setOnClickListener { toggleService() }
         findViewById<Button>(R.id.btnAccessibility).setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            Toast.makeText(this, "请在列表中找到「剪贴板管家」并开启", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "请在列表中找到「共享剪贴-卢」并开启", Toast.LENGTH_LONG).show()
         }
         findViewById<Button>(R.id.btnDeleteRange).setOnClickListener { showDeleteRangeDialog() }
         findViewById<Button>(R.id.btnBackup).setOnClickListener {
