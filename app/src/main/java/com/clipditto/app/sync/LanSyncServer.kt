@@ -172,7 +172,16 @@ class LanSyncServer(
         // getSince 按时间升序，limit 取末尾 N 条即"最新 N 条"
         if (limit > 0 && items.size > limit) items = items.takeLast(limit)
         val list = items.map { it.toWire() }
-        respond(output, 200, "application/json", gson.toJson(list))
+        // 请求带 X-Pub-Key（对方开了加密传输）时加密响应
+        val enc = encryptionFor(headers)
+        if (enc != null) {
+            val payload = SyncCrypto.encrypt(
+                enc.second, gson.toJson(list).toByteArray(StandardCharsets.UTF_8)
+            )
+            respondEncrypted(output, payload, enc.first.publicB64)
+        } else {
+            respond(output, 200, "application/json", gson.toJson(list))
+        }
     }
 
     private fun handleFile(
@@ -192,7 +201,39 @@ class LanSyncServer(
             respond(output, 404, "text/plain", "File Not Found")
             return
         }
-        respondMedia(output, path)
+        // 请求带 X-Pub-Key（对方开了加密传输）时加密响应
+        val enc = encryptionFor(headers)
+        if (enc != null) {
+            // GCM 密文长度 = 12(IV) + 明文 + 16(认证标签)，可预先算出 Content-Length
+            val total = 12 + repo.mediaLength(path) + 16
+            val head = "HTTP/1.1 200 OK\r\n" +
+                "Content-Type: application/octet-stream\r\n" +
+                "${SyncCrypto.HEADER_ENCRYPTED}: 1\r\n" +
+                "${SyncCrypto.HEADER_PUB_KEY}: ${enc.first.publicB64}\r\n" +
+                "Content-Length: $total\r\n" +
+                "Connection: close\r\n\r\n"
+            output.write(head.toByteArray(StandardCharsets.UTF_8))
+            repo.openMedia(path)?.use { SyncCrypto.encryptStream(enc.second, it, output) }
+            output.flush()
+        } else {
+            respondMedia(output, path)
+        }
+    }
+
+    /**
+     * 请求方要求加密时（带 X-Pub-Key 头）生成临时密钥对并导出共享密钥；
+     * 没带或密钥格式异常返回 null → 明文响应（兼容旧版本）。
+     * 注意请求头键在 handle() 里已统一转小写。
+     */
+    private fun encryptionFor(
+        headers: Map<String, String>
+    ): Pair<SyncCrypto.Ephemeral, javax.crypto.SecretKey>? {
+        val peerPub = headers[SyncCrypto.HEADER_PUB_KEY.lowercase()] ?: return null
+        return runCatching {
+            val eph = SyncCrypto.generate()
+            eph to SyncCrypto.deriveKey(eph, peerPub)
+        }.onFailure { Log.w(TAG, "加密密钥交换失败，回退明文: ${it.message}") }
+            .getOrNull()
     }
 
     /**
@@ -388,6 +429,19 @@ class LanSyncServer(
             "Connection: close\r\n\r\n"
         output.write(head.toByteArray(StandardCharsets.UTF_8))
         output.write(bytes)
+        output.flush()
+    }
+
+    /** 加密响应：固定 200 + octet-stream，带 X-Encrypted / X-Pub-Key 头 */
+    private fun respondEncrypted(output: OutputStream, body: ByteArray, pubB64: String) {
+        val head = "HTTP/1.1 200 OK\r\n" +
+            "Content-Type: application/octet-stream\r\n" +
+            "${SyncCrypto.HEADER_ENCRYPTED}: 1\r\n" +
+            "${SyncCrypto.HEADER_PUB_KEY}: $pubB64\r\n" +
+            "Content-Length: ${body.size}\r\n" +
+            "Connection: close\r\n\r\n"
+        output.write(head.toByteArray(StandardCharsets.UTF_8))
+        output.write(body)
         output.flush()
     }
 

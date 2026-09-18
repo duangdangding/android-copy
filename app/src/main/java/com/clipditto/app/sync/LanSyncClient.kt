@@ -22,6 +22,9 @@ class PairNeedConfirmException : Exception("need_confirm")
 /** 对方已取消与本机的配对（本机被拉黑） */
 class UnpairedException : Exception("unpaired")
 
+/** 本机要求加密传输，但对方不支持（旧版本）或响应被篡改 */
+class EncryptionRequiredException : Exception("encryption_required")
+
 /** 对方把本机加入了黑名单。deviceId 已知时携带（/info 的 403 响应里有） */
 class BlockedByException(val blockedByDeviceId: String? = null) : Exception("blocked")
 
@@ -60,24 +63,41 @@ class LanSyncClient(
         }
     }
 
+    /** /clips 的拉取结果：记录列表 + 本次是否加密传输（对方是旧版本时为 false） */
+    data class ClipsResult(val items: JsonArray, val encrypted: Boolean)
+
     /**
      * 拉取记录。
      * @param since 只取 timestamp 大于该值的记录（增量水位）
      * @param until 可选，只取 timestamp 不超过该值的记录（"同步某一天"用）
      * @param limit 可选，>0 时只取最新 N 条（"同步最近 N 条"用）
+     * 本机开启加密传输时带临时公钥请求加密；对方不支持（旧版本）直接失败，不回退明文。
      */
-    fun fetchClips(device: LanDevice, since: Long, until: Long? = null, limit: Int = 0): JsonArray {
+    fun fetchClips(device: LanDevice, since: Long, until: Long? = null, limit: Int = 0): ClipsResult {
         val qs = buildString {
             append("since=").append(since)
             if (until != null) append("&until=").append(until)
             if (limit > 0) append("&limit=").append(limit)
         }
+        val eph = if (settings.syncEncryption) SyncCrypto.generate() else null
         val conn = connect(
-            device.host!!, device.port, "/clips?$qs", token = device.token
+            device.host!!, device.port, "/clips?$qs", token = device.token, eph = eph
         )
         try {
             when (conn.responseCode) {
-                200 -> return gson.fromJson(readText(conn), JsonArray::class.java)
+                200 -> {
+                    val bytes = conn.inputStream.use { it.readBytes() }
+                    val encrypted = conn.getHeaderField(SyncCrypto.HEADER_ENCRYPTED) == "1"
+                    // 要求加密而响应未加密：对方是旧版本或响应被篡改，拒绝接受
+                    if (eph != null && !encrypted) throw EncryptionRequiredException()
+                    val payload = if (encrypted) {
+                        SyncCrypto.decrypt(responseKey(conn, eph), bytes)
+                    } else bytes
+                    return ClipsResult(
+                        gson.fromJson(String(payload, Charsets.UTF_8), JsonArray::class.java),
+                        encrypted
+                    )
+                }
                 401 -> throw NeedPairingException()
                 403 -> throw forbidden(conn)
                 else -> error("clips http ${conn.responseCode}")
@@ -118,15 +138,22 @@ class LanSyncClient(
         }
     }
 
-    /** 下载媒体文件到本地 */
+    /** 下载媒体文件到本地（开启加密传输时要求对方必须加密，否则失败） */
     fun downloadFile(device: LanDevice, remoteId: Long, out: File) {
+        val eph = if (settings.syncEncryption) SyncCrypto.generate() else null
         val conn = connect(
-            device.host!!, device.port, "/file?id=$remoteId", token = device.token
+            device.host!!, device.port, "/file?id=$remoteId", token = device.token, eph = eph
         )
         try {
             when (conn.responseCode) {
-                200 -> conn.inputStream.use { input ->
-                    out.outputStream().use { input.copyTo(it) }
+                200 -> {
+                    val encrypted = conn.getHeaderField(SyncCrypto.HEADER_ENCRYPTED) == "1"
+                    // 要求加密而响应未加密：拒绝接受明文
+                    if (eph != null && !encrypted) throw EncryptionRequiredException()
+                    val input = if (encrypted) {
+                        SyncCrypto.decryptStream(responseKey(conn, eph), conn.inputStream)
+                    } else conn.inputStream
+                    input.use { i -> out.outputStream().use { i.copyTo(it) } }
                 }
                 401 -> throw NeedPairingException()
                 403 -> throw forbidden(conn)
@@ -135,6 +162,17 @@ class LanSyncClient(
         } finally {
             conn.disconnect()
         }
+    }
+
+    /** 从加密响应头取对方公钥，与己方临时私钥算出共享密钥 */
+    private fun responseKey(
+        conn: HttpURLConnection,
+        eph: SyncCrypto.Ephemeral?
+    ): javax.crypto.SecretKey {
+        requireNotNull(eph) { "收到加密响应但本机未发起密钥交换" }
+        val peer = conn.getHeaderField(SyncCrypto.HEADER_PUB_KEY)
+            ?: error("加密响应缺少公钥头")
+        return SyncCrypto.deriveKey(eph, peer)
     }
 
     /**
@@ -182,7 +220,8 @@ class LanSyncClient(
         port: Int,
         path: String,
         token: String?,
-        timeoutMs: Int = 5_000
+        timeoutMs: Int = 5_000,
+        eph: SyncCrypto.Ephemeral? = null
     ): HttpURLConnection {
         // IPv6 地址需要用方括号包裹才能拼进 URL
         val h = if (host.contains(':') && !host.startsWith("[")) "[$host]" else host
@@ -201,6 +240,8 @@ class LanSyncClient(
         if (myServerPort() > 0) {
             conn.setRequestProperty("X-My-Port", myServerPort().toString())
         }
+        // 请求加密传输：带临时公钥，对方支持时响应体会用 ECDH 共享密钥加密
+        eph?.let { conn.setRequestProperty(SyncCrypto.HEADER_PUB_KEY, it.publicB64) }
         token?.let {
             conn.setRequestProperty("X-Token", it)
             // 附上本机配对码，对方验证通过后可自动反向配对

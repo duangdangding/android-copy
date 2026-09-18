@@ -59,6 +59,21 @@ class LanSettings(context: Context) {
         get() = prefs.getStringSet(KEY_SYNC_TYPES, ALL_GROUPS) ?: ALL_GROUPS
         set(v) = prefs.edit().putStringSet(KEY_SYNC_TYPES, v).apply()
 
+    /**
+     * 拉取时是否要求加密传输（默认关闭）。
+     * 开启后请求会带临时公钥做 ECDH 密钥交换，对方是旧版本不支持时自动回退明文并提示。
+     */
+    var syncEncryption: Boolean
+        get() = prefs.getBoolean(KEY_SYNC_ENCRYPTION, false)
+        set(v) = prefs.edit().putBoolean(KEY_SYNC_ENCRYPTION, v).apply()
+
+    /** 自动同步间隔（秒），默认 30 秒；下限 5 秒避免过于频繁 */
+    var autoSyncIntervalSec: Int
+        get() = prefs.getInt(KEY_AUTO_SYNC_INTERVAL, DEFAULT_AUTO_SYNC_INTERVAL_SEC)
+        set(v) = prefs.edit()
+            .putInt(KEY_AUTO_SYNC_INTERVAL, v.coerceAtLeast(MIN_AUTO_SYNC_INTERVAL_SEC))
+            .apply()
+
     /** 剪贴板类型 → 同步类型分组（FILE / AUDIO 都归入"其他"） */
     fun syncGroupOf(type: Int): String = when (type) {
         com.clipditto.app.data.ClipType.TEXT -> GROUP_TEXT
@@ -250,6 +265,10 @@ class LanSettings(context: Context) {
         private const val KEY_SYNC_DIR_URI = "sync_dir_uri"
         private const val KEY_SYNC_MAX_SIZE_MB = "sync_max_size_mb"
         private const val KEY_SYNC_TYPES = "sync_types"
+        private const val KEY_SYNC_ENCRYPTION = "sync_encryption"
+        private const val KEY_AUTO_SYNC_INTERVAL = "auto_sync_interval_sec"
+        const val DEFAULT_AUTO_SYNC_INTERVAL_SEC = 30
+        const val MIN_AUTO_SYNC_INTERVAL_SEC = 5
         const val DEFAULT_PORT = 8765
         const val DEFAULT_SYNC_MAX_SIZE_MB = 20
 

@@ -23,11 +23,20 @@ class App : Application() {
             "剪贴板监听",
             NotificationManager.IMPORTANCE_MIN
         ).apply { setShowBadge(false) }
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        // 同步结果提示：低打扰（无声音、不横幅），只进通知栏
+        val syncChannel = NotificationChannel(
+            CHANNEL_SYNC,
+            "同步结果",
+            NotificationManager.IMPORTANCE_LOW
+        )
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(channel)
+        nm.createNotificationChannel(syncChannel)
     }
 
     companion object {
         const val CHANNEL_ID = "clipboard_monitor"
+        const val CHANNEL_SYNC = "sync_result"
         lateinit var instance: App
             private set
     }

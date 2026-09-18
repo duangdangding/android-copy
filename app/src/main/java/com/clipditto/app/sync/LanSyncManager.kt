@@ -2,6 +2,8 @@ package com.clipditto.app.sync
 
 import android.content.Context
 import android.util.Log
+import com.clipditto.app.App
+import com.clipditto.app.R
 import com.clipditto.app.data.ClipItem
 import com.clipditto.app.data.ClipRepository
 import com.clipditto.app.data.ClipType
@@ -29,7 +31,6 @@ import java.io.File
 object LanSyncManager {
 
     private const val TAG = "LanSyncManager"
-    private const val AUTO_SYNC_INTERVAL = 30_000L
 
     private lateinit var appContext: Context
     private lateinit var settings: LanSettings
@@ -350,7 +351,7 @@ object LanSyncManager {
             }
             val until = (scope as? SyncScope.Day)?.let { it.dayStart + SyncScope.DAY_MS - 1 }
             val limit = (scope as? SyncScope.Recent)?.count ?: 0
-            val raw = try {
+            val resp = try {
                 client.fetchClips(d, since, until, limit)
             } catch (e: UnpairedException) {
                 // 对方已取消与本机的配对：本地同步解除配对状态
@@ -358,6 +359,7 @@ object LanSyncManager {
                 refreshDevices()
                 throw e
             }
+            val raw = resp.items
             // 对方 App 可能是旧版本（服务端不认 until/limit，会全量返回）：
             // 客户端兜底再过滤一次，保证同步范围一定生效。
             // 注意这里只多传了元数据 JSON，媒体文件是按入库项逐个下载的，不会被多拉
@@ -508,6 +510,13 @@ object LanSyncManager {
 
     // ---------------- 自动同步 ----------------
 
+    /** 自动同步结果通知 id（固定，新结果覆盖旧的） */
+    private val SYNC_NOTIFY_ID = 1002
+
+    /** 失败通知节流：deviceId+原因 → 上次通知时间，10 分钟内同原因只提示一次 */
+    private val lastFailNotifyAt = mutableMapOf<String, Long>()
+    private val NOTIFY_FAIL_THROTTLE = 10 * 60_000L
+
     private fun startAutoSyncLoop() {
         if (autoSyncStarted) return
         autoSyncStarted = true
@@ -517,11 +526,73 @@ object LanSyncManager {
                     val targets = _devices.value.filter { it.online && it.paired && it.sharing }
                     targets.forEach { d ->
                         runCatching { syncDevice(d) }
-                            .onFailure { Log.w(TAG, "自动同步 ${d.name} 失败: ${it.message}") }
+                            .onSuccess { notifyAutoSync(d, it) }
+                            .onFailure {
+                                Log.w(TAG, "自动同步 ${d.name} 失败: ${it.message}")
+                                notifyAutoSyncFailure(d, it)
+                            }
                     }
                 }
-                delay(AUTO_SYNC_INTERVAL)
+                // 每轮读取最新设置：修改间隔下一轮即生效
+                delay(settings.autoSyncIntervalSec * 1000L)
             }
+        }
+    }
+
+    /** 自动同步成功：有新增或有被过滤/存储失败的条目才通知；全是重复内容则静默 */
+    private fun notifyAutoSync(d: LanDevice, res: SyncResult) {
+        if (res.added == 0 && res.skippedStoreFail == 0 &&
+            res.skippedTooBig == 0 && res.skippedType == 0
+        ) return
+        val text = buildString {
+            append("新增 ${res.added} 条")
+            if (res.skippedTooBig > 0) {
+                append("，${res.skippedTooBig} 条超大小上限（${settings.syncMaxSizeMb}M）未同步")
+            }
+            if (res.skippedType > 0) append("，${res.skippedType} 条类型未勾选")
+            if (res.skippedStoreFail > 0) append("，${res.skippedStoreFail} 条存储失败")
+        }
+        postSyncNotification("已从「${d.displayName}」同步", text)
+    }
+
+    /** 自动同步失败：通知原因，同设备同原因 10 分钟节流防刷屏 */
+    private fun notifyAutoSyncFailure(d: LanDevice, e: Throwable) {
+        val reason = when (e) {
+            is EncryptionRequiredException -> "对方不支持加密传输（对端升级或关闭本机加密开关）"
+            is NeedPairingException -> "需要重新配对"
+            is SharingOffException -> "对方关闭了共享"
+            is UnpairedException -> "对方已取消配对"
+            is BlockedByException -> "对方已把本机加入黑名单"
+            is BlockedException -> "该设备在本机黑名单中"
+            else -> "连接失败：${e.message ?: e.javaClass.simpleName}"
+        }
+        val key = "${d.deviceId}|$reason"
+        val now = System.currentTimeMillis()
+        if (now - (lastFailNotifyAt[key] ?: 0L) < NOTIFY_FAIL_THROTTLE) return
+        lastFailNotifyAt[key] = now
+        postSyncNotification("自动同步「${d.displayName}」失败", reason)
+    }
+
+    /** 发同步结果通知：低打扰渠道，点击打开设备页；无通知权限时静默忽略 */
+    private fun postSyncNotification(title: String, text: String) {
+        val pi = android.app.PendingIntent.getActivity(
+            appContext, 0,
+            android.content.Intent(
+                appContext, com.clipditto.app.ui.DevicesActivity::class.java
+            ),
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+        val n = androidx.core.app.NotificationCompat.Builder(appContext, App.CHANNEL_SYNC)
+            .setSmallIcon(R.drawable.ic_clipboard)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .build()
+        runCatching {
+            (appContext.getSystemService(Context.NOTIFICATION_SERVICE)
+                as android.app.NotificationManager).notify(SYNC_NOTIFY_ID, n)
         }
     }
 

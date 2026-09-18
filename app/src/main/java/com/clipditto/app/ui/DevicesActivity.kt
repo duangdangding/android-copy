@@ -26,6 +26,7 @@ import com.clipditto.app.sync.LanDevice
 import com.clipditto.app.sync.LanSettings
 import com.clipditto.app.sync.LanSyncManager
 import com.clipditto.app.sync.BlockedByException
+import com.clipditto.app.sync.EncryptionRequiredException
 import com.clipditto.app.sync.NeedPairingException
 import com.clipditto.app.sync.SharingOffException
 import com.clipditto.app.sync.UnpairedException
@@ -104,6 +105,7 @@ class DevicesActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.tvSyncDir).setOnClickListener { showSyncDirDialog() }
         findViewById<TextView>(R.id.tvSyncMaxSize).setOnClickListener { showSyncMaxSizeDialog() }
         findViewById<TextView>(R.id.tvSyncTypes).setOnClickListener { showSyncTypesDialog() }
+        findViewById<TextView>(R.id.tvSyncInterval).setOnClickListener { showSyncIntervalDialog() }
         refreshSyncSettingsUi()
 
         findViewById<Button>(R.id.btnAddIp).setOnClickListener { showAddIpDialog() }
@@ -412,6 +414,9 @@ class DevicesActivity : AppCompatActivity() {
         findViewById<SwitchCompat>(R.id.swAutoAccept).setOnCheckedChangeListener { _, on ->
             LanSyncManager.settings().autoAcceptPair = on
         }
+        findViewById<SwitchCompat>(R.id.swEncryption).setOnCheckedChangeListener { _, on ->
+            LanSyncManager.settings().syncEncryption = on
+        }
     }
 
     private fun refreshSwitches() {
@@ -420,6 +425,7 @@ class DevicesActivity : AppCompatActivity() {
         findViewById<SwitchCompat>(R.id.swSharing).isChecked = s.sharing
         findViewById<SwitchCompat>(R.id.swAutoSync).isChecked = s.autoSync
         findViewById<SwitchCompat>(R.id.swAutoAccept).isChecked = s.autoAcceptPair
+        findViewById<SwitchCompat>(R.id.swEncryption).isChecked = s.syncEncryption
         refreshPairingCode()
     }
 
@@ -620,6 +626,59 @@ class DevicesActivity : AppCompatActivity() {
         val labels = s.syncTypeGroups.mapNotNull { LanSettings.GROUP_LABELS[it] }
         findViewById<TextView>(R.id.tvSyncTypes).text =
             "同步类型：${if (labels.isEmpty()) "（未勾选任何类型）" else labels.joinToString("、")}（点击修改）"
+        findViewById<TextView>(R.id.tvSyncInterval).text =
+            "自动同步间隔：${formatInterval(s.autoSyncIntervalSec)}（点击修改）"
+    }
+
+    /** 间隔显示：60 秒以上显示为分钟，否则秒 */
+    private fun formatInterval(sec: Int): String =
+        if (sec % 60 == 0) "${sec / 60} 分钟" else "$sec 秒"
+
+    /** 自动同步间隔：预设档位 + 自定义秒数 */
+    private fun showSyncIntervalDialog() {
+        val presets = intArrayOf(10, 30, 60, 300, 600)
+        val labels = presets.map { formatInterval(it) }.toTypedArray() + "自定义…"
+        AlertDialog.Builder(this)
+            .setTitle("自动同步间隔")
+            .setItems(labels) { _, which ->
+                if (which < presets.size) {
+                    LanSyncManager.settings().autoSyncIntervalSec = presets[which]
+                    refreshSyncSettingsUi()
+                } else {
+                    showCustomIntervalDialog()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun showCustomIntervalDialog() {
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            hint = "间隔（秒，最小 ${LanSettings.MIN_AUTO_SYNC_INTERVAL_SEC}）"
+        }
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val container = android.widget.FrameLayout(this).apply {
+            setPadding(pad, pad / 2, pad, 0)
+            addView(input)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("自定义同步间隔")
+            .setView(container)
+            .setPositiveButton("确定") { _, _ ->
+                val n = input.text.toString().toIntOrNull()
+                if (n == null || n < LanSettings.MIN_AUTO_SYNC_INTERVAL_SEC) {
+                    Toast.makeText(
+                        this, "请输入不小于 ${LanSettings.MIN_AUTO_SYNC_INTERVAL_SEC} 的秒数",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    LanSyncManager.settings().autoSyncIntervalSec = n
+                    refreshSyncSettingsUi()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     /** 把 SAF 树 URI 转为可读目录名，如 "primary:Download/clip" → "Download/clip" */
@@ -827,6 +886,7 @@ class DevicesActivity : AppCompatActivity() {
                         is NeedPairingException -> "需要配对（点击设备输入配对码）"
                         is SharingOffException -> "对方关闭了共享"
                         is UnpairedException -> "对方已取消与你的配对（本机已自动解除配对状态）"
+                        is EncryptionRequiredException -> "对方不支持加密传输（对方也需升级到新版本，或关闭本机的加密传输开关）"
                         is LanSyncManager.BlockedException -> "该设备在你的黑名单中（点上方「黑名单」可移出）"
                         is BlockedByException -> "对方已把你加入黑名单，无法操作"
                         else -> it.message ?: "连接失败"
