@@ -60,10 +60,20 @@ class LanSyncClient(
         }
     }
 
-    /** 增量拉取记录 */
-    fun fetchClips(device: LanDevice, since: Long): JsonArray {
+    /**
+     * 拉取记录。
+     * @param since 只取 timestamp 大于该值的记录（增量水位）
+     * @param until 可选，只取 timestamp 不超过该值的记录（"同步某一天"用）
+     * @param limit 可选，>0 时只取最新 N 条（"同步最近 N 条"用）
+     */
+    fun fetchClips(device: LanDevice, since: Long, until: Long? = null, limit: Int = 0): JsonArray {
+        val qs = buildString {
+            append("since=").append(since)
+            if (until != null) append("&until=").append(until)
+            if (limit > 0) append("&limit=").append(limit)
+        }
         val conn = connect(
-            device.host!!, device.port, "/clips?since=$since", token = device.token
+            device.host!!, device.port, "/clips?$qs", token = device.token
         )
         try {
             when (conn.responseCode) {

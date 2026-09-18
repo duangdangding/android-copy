@@ -289,11 +289,34 @@ object LanSyncManager {
     /** 同步结果统计 */
     data class SyncResult(val added: Int, val skipped: Int)
 
+    /**
+     * 手动同步的范围选择（自动同步始终走增量，不涉及）。
+     * 注意：范围同步（最近N条/某天）不推进 lastSync 增量水位，
+     * 避免打乱自动同步的连续性；只有增量同步和全量同步推进水位。
+     */
+    sealed class SyncScope {
+        /** 全部记录（since=0，同步后推进水位） */
+        object All : SyncScope()
+
+        /** 最近 N 条（服务端取最新 N 条） */
+        data class Recent(val count: Int) : SyncScope()
+
+        /** 某一天（dayStart 为当天 0 点的时间戳，本地时区） */
+        data class Day(val dayStart: Long) : SyncScope()
+
+        companion object {
+            const val DAY_MS = 86_400_000L
+        }
+    }
+
     /** 目标设备在本机黑名单中 */
     class BlockedException : Exception("blocked")
 
-    /** 手动同步一台设备。需要设备已配对（持有配对码）且在线。 */
-    suspend fun syncDevice(device: LanDevice): SyncResult = withContext(Dispatchers.IO) {
+    /**
+     * 手动同步一台设备。需要设备已配对（持有配对码）且在线。
+     * @param scope 同步范围；null = 增量（从上次水位之后），自动同步固定走增量
+     */
+    suspend fun syncDevice(device: LanDevice, scope: SyncScope? = null): SyncResult = withContext(Dispatchers.IO) {
         if (device.deviceId in settings.getBlockedDevices()) throw BlockedException()
         if (device.deviceId in settings.getBlockedBy()) throw BlockedByException()
         if (device.host == null) error("设备离线")
@@ -305,28 +328,46 @@ object LanSyncManager {
                 .firstOrNull { it.deviceId == device.deviceId } ?: device
             val d = target.copy(token = token)
 
-            val since = settings.getLastSync(device.deviceId)
-            val clips = try {
-                client.fetchClips(d, since)
+            val since = when (scope) {
+                null -> settings.getLastSync(device.deviceId)
+                // DAO 的 getSince 是严格大于，某天的起始边界要减 1ms 才能含当天 0 点整
+                is SyncScope.Day -> scope.dayStart - 1
+                else -> 0L
+            }
+            val until = (scope as? SyncScope.Day)?.let { it.dayStart + SyncScope.DAY_MS - 1 }
+            val limit = (scope as? SyncScope.Recent)?.count ?: 0
+            val raw = try {
+                client.fetchClips(d, since, until, limit)
             } catch (e: UnpairedException) {
                 // 对方已取消与本机的配对：本地同步解除配对状态
                 settings.removePairedDevice(device.deviceId)
                 refreshDevices()
                 throw e
             }
+            // 对方 App 可能是旧版本（服务端不认 until/limit，会全量返回）：
+            // 客户端兜底再过滤一次，保证同步范围一定生效。
+            // 注意这里只多传了元数据 JSON，媒体文件是按入库项逐个下载的，不会被多拉
+            val clips = raw.map { it.asJsonObject }
+                .filter { until == null || it.get("timestamp").asLong <= until }
+                .let { list -> if (limit > 0 && list.size > limit) list.takeLast(limit) else list }
+            if (clips.size != raw.size()) {
+                Log.d(TAG, "对方未按范围返回（旧版本？），客户端兜底过滤：${raw.size()} → ${clips.size} 条")
+            }
             var added = 0
             var skipped = 0
             var maxTs = since
 
-            clips.forEach { el ->
-                val obj = el.asJsonObject
+            clips.forEach { obj ->
                 maxTs = maxOf(maxTs, obj.get("timestamp").asLong)
                 when (importClip(obj, d)) {
                     true -> added++
                     false -> skipped++
                 }
             }
-            settings.setLastSync(device.deviceId, maxTs)
+            // 只有增量同步和全量同步推进水位；最近N条/某天是"点播"，不动水位
+            if (scope == null || scope is SyncScope.All) {
+                settings.setLastSync(device.deviceId, maxTs)
+            }
             refreshDevices()
             SyncResult(added, skipped)
         } finally {
@@ -335,10 +376,13 @@ object LanSyncManager {
     }
 
     /** 手动同步多台设备，返回 deviceId → 结果（失败为异常信息） */
-    suspend fun syncDevices(devices: List<LanDevice>): Map<String, Result<SyncResult>> {
+    suspend fun syncDevices(
+        devices: List<LanDevice>,
+        scope: SyncScope? = null
+    ): Map<String, Result<SyncResult>> {
         val out = mutableMapOf<String, Result<SyncResult>>()
         devices.forEach { d ->
-            out[d.deviceId] = runCatching { syncDevice(d) }
+            out[d.deviceId] = runCatching { syncDevice(d, scope) }
         }
         return out
     }

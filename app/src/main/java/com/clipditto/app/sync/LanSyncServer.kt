@@ -20,7 +20,8 @@ import java.util.concurrent.Executors
  *
  * 接口：
  * - GET /info           设备信息（无需配对码）
- * - GET /clips?since=   增量拉取记录（需配对码 + 共享开关开启）
+ * - GET /clips?since=[&until=][&limit=]  拉取记录（需配对码 + 共享开关开启）；
+ *   until=时间上限（含），limit=只取最新 N 条，均为可选参数，旧客户端不带则行为不变
  * - GET /file?id=       拉取媒体文件（需配对码 + 共享开关开启）
  *
  * 配对码通过 X-Token 请求头传递；请求方在 X-Device-Id 里带自己的 deviceId，
@@ -162,10 +163,15 @@ class LanSyncServer(
         if (rejectIfUnpaired(output, headers)) return
         maybeAutoPair(headers, clientIp)
         val since = query["since"]?.toLongOrNull() ?: 0L
+        val until = query["until"]?.toLongOrNull() ?: Long.MAX_VALUE
+        val limit = query["limit"]?.toIntOrNull() ?: 0
         val requesterId = headers["x-device-id"] ?: ""
-        val items = runBlocking { repo.getSince(since) }
+        var items = runBlocking { repo.getSince(since) }
             // 环回防护：不回传"本来就来自请求方"的记录
             .filter { it.remoteDeviceId == null || it.remoteDeviceId != requesterId }
+            .filter { it.timestamp <= until }
+        // getSince 按时间升序，limit 取末尾 N 条即"最新 N 条"
+        if (limit > 0 && items.size > limit) items = items.takeLast(limit)
         val list = items.map { it.toWire() }
         respond(output, 200, "application/json", gson.toJson(list))
     }

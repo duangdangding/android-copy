@@ -1,6 +1,7 @@
 package com.clipditto.app.ui
 
 import android.app.AlertDialog
+import android.app.DatePickerDialog
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
@@ -27,6 +28,7 @@ import com.clipditto.app.sync.SharingOffException
 import com.clipditto.app.sync.UnpairedException
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import java.util.Calendar
 
 /**
  * 「局域网剪贴板同步」设备页：
@@ -576,8 +578,95 @@ class DevicesActivity : AppCompatActivity() {
             Toast.makeText(this, "所选设备都不在线", Toast.LENGTH_SHORT).show()
             return
         }
+        // 先选同步范围，再执行
+        showSyncScopeDialog { scope -> doSync(actionable, scope) }
+    }
+
+    // ---------------- 同步范围选择 ----------------
+
+    /** 三种同步范围：最近 N 条 / 某一天 / 全部 */
+    private fun showSyncScopeDialog(onPicked: (LanSyncManager.SyncScope) -> Unit) {
+        AlertDialog.Builder(this)
+            .setTitle("选择同步范围")
+            .setItems(arrayOf("同步最近 N 条", "同步某一天", "全部同步")) { _, which ->
+                when (which) {
+                    0 -> showRecentCountDialog(onPicked)
+                    1 -> showSyncDayPicker(onPicked)
+                    2 -> onPicked(LanSyncManager.SyncScope.All)
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /** 最近 N 条：常用档位 + 自定义输入 */
+    private fun showRecentCountDialog(onPicked: (LanSyncManager.SyncScope) -> Unit) {
+        val counts = intArrayOf(10, 20, 50, 100, 200)
+        val labels = counts.map { "$it 条" }.toTypedArray() + "自定义…"
+        AlertDialog.Builder(this)
+            .setTitle("同步最近多少条？")
+            .setItems(labels) { _, which ->
+                if (which < counts.size) {
+                    onPicked(LanSyncManager.SyncScope.Recent(counts[which]))
+                } else {
+                    showCustomCountDialog(onPicked)
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun showCustomCountDialog(onPicked: (LanSyncManager.SyncScope) -> Unit) {
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            hint = "条数"
+        }
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val container = android.widget.FrameLayout(this).apply {
+            setPadding(pad, pad / 2, pad, 0)
+            addView(input)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("自定义条数")
+            .setView(container)
+            .setPositiveButton("同步") { _, _ ->
+                val n = input.text.toString().toIntOrNull()
+                if (n == null || n <= 0) {
+                    Toast.makeText(this, "请输入有效条数", Toast.LENGTH_SHORT).show()
+                } else {
+                    onPicked(LanSyncManager.SyncScope.Recent(n))
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /** 选择某一天：默认今天，不允许选未来日期 */
+    private fun showSyncDayPicker(onPicked: (LanSyncManager.SyncScope) -> Unit) {
+        val cal = Calendar.getInstance()
+        DatePickerDialog(
+            this,
+            { _, year, month, day ->
+                val dayStart = Calendar.getInstance().apply {
+                    set(year, month, day, 0, 0, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }.timeInMillis
+                onPicked(LanSyncManager.SyncScope.Day(dayStart))
+            },
+            cal.get(Calendar.YEAR),
+            cal.get(Calendar.MONTH),
+            cal.get(Calendar.DAY_OF_MONTH)
+        ).apply {
+            datePicker.maxDate = System.currentTimeMillis()
+        }.show()
+    }
+
+    private fun doSync(
+        actionable: List<LanDevice>,
+        scope: LanSyncManager.SyncScope
+    ) {
         lifecycleScope.launch {
-            val results = LanSyncManager.syncDevices(actionable)
+            val results = LanSyncManager.syncDevices(actionable, scope)
             val sb = StringBuilder()
             results.forEach { (id, r) ->
                 val name = devices.firstOrNull { it.deviceId == id }?.displayName ?: id
