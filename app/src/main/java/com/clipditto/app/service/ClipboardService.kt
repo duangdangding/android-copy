@@ -170,8 +170,9 @@ class ClipboardService : Service() {
         val now = SystemClock.uptimeMillis()
         if (now - lastPollAt < 350) return // 节流：350ms 内最多触发一轮
         lastPollAt = now
-        // 复制事件先于剪贴板写入，延迟读两次提高命中率；
-        // 第一次已读到新内容则第二次跳过（每次读取都要添加/移除焦点悬浮窗，可能打断输入法）。
+        // 无 Shizuku 时每次读取都要添加/移除一次 1px 焦点悬浮窗，会干扰输入法等其他操作，
+        // 因此每次复制事件只读一次（捕获一条），不做第二次补读刷新；
+        // 没读到就放弃这条，等下一次复制事件。
         // 延迟执行时再次检查：400ms 内键盘/系统弹窗可能刚弹出（对话框先弹、焦点后到）
         handler.postDelayed({
             if (PasteAccessibilityService.imeAnimatingIn() ||
@@ -181,14 +182,6 @@ class ClipboardService : Service() {
                 return@postDelayed
             }
             pollClipboard()
-            handler.postDelayed({
-                if (!lastPollFoundNew &&
-                    !PasteAccessibilityService.imeAnimatingIn() &&
-                    !PasteAccessibilityService.systemDialogRecently()
-                ) {
-                    pollClipboard()
-                }
-            }, 900)
         }, 400)
     }
 
