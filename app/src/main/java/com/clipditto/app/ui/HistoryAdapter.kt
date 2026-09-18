@@ -12,6 +12,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.clipditto.app.R
 import com.clipditto.app.data.ClipItem
 import com.clipditto.app.data.ClipType
+import com.clipditto.app.util.MediaFiles
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -71,7 +72,10 @@ class HistoryAdapter(
 
         when (item.type) {
             ClipType.IMAGE -> {
-                val bmp = item.filePath?.let { BitmapFactory.decodeFile(it) }
+                val bmp = item.filePath?.let { path ->
+                    MediaFiles.openInput(holder.itemView.context, path)
+                        ?.use { BitmapFactory.decodeStream(it) }
+                }
                 if (bmp != null) {
                     holder.thumb.setImageBitmap(bmp)
                     holder.thumb.visibility = View.VISIBLE
@@ -81,7 +85,12 @@ class HistoryAdapter(
                 val bmp = item.filePath?.let { path ->
                     runCatching {
                         val r = MediaMetadataRetriever()
-                        r.setDataSource(path)
+                        // filePath 可能是本地路径或 content:// 文档 URI（同步下载的）
+                        if (MediaFiles.isContentUri(path)) {
+                            r.setDataSource(holder.itemView.context, android.net.Uri.parse(path))
+                        } else {
+                            r.setDataSource(path)
+                        }
                         val frame = r.frameAtTime
                         r.release()
                         frame

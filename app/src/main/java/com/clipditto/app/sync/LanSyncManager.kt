@@ -5,6 +5,7 @@ import android.util.Log
 import com.clipditto.app.data.ClipItem
 import com.clipditto.app.data.ClipRepository
 import com.clipditto.app.data.ClipType
+import com.clipditto.app.util.MediaFiles
 import com.google.gson.JsonObject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -286,8 +287,21 @@ object LanSyncManager {
 
     // ---------------- 同步 ----------------
 
-    /** 同步结果统计 */
-    data class SyncResult(val added: Int, val skipped: Int)
+    /**
+     * 同步结果统计。
+     * @param added 新增入库
+     * @param skipped 去重跳过（内容已有）
+     * @param skippedStoreFail 媒体落盘失败（目录权限失效/空间不足等）
+     * @param skippedTooBig 超过大小上限而跳过的媒体数
+     * @param skippedType 类型未勾选而跳过的条数
+     */
+    data class SyncResult(
+        val added: Int,
+        val skipped: Int,
+        val skippedStoreFail: Int = 0,
+        val skippedTooBig: Int = 0,
+        val skippedType: Int = 0
+    )
 
     /**
      * 手动同步的范围选择（自动同步始终走增量，不涉及）。
@@ -355,13 +369,31 @@ object LanSyncManager {
             }
             var added = 0
             var skipped = 0
+            var skippedStoreFail = 0
+            var skippedTooBig = 0
+            var skippedType = 0
             var maxTs = since
+
+            val enabledGroups = settings.syncTypeGroups
+            val maxBytes = settings.syncMaxSizeBytes
 
             clips.forEach { obj ->
                 maxTs = maxOf(maxTs, obj.get("timestamp").asLong)
+                // 接收方过滤（在下载媒体之前生效，被跳过的媒体不会传输文件内容）
+                val type = obj.get("type").asInt
+                if (settings.syncGroupOf(type) !in enabledGroups) {
+                    skippedType++
+                    return@forEach
+                }
+                if (type != ClipType.TEXT) {
+                    // 超过大小上限（元数据里的 fileSize；下载后还会再校验一次实际大小）
+                    if (obj.lng("fileSize") > maxBytes) { skippedTooBig++; return@forEach }
+                }
                 when (importClip(obj, d)) {
-                    true -> added++
-                    false -> skipped++
+                    ImportResult.Added -> added++
+                    ImportResult.Duplicate -> skipped++
+                    // 存储失败（目录权限失效/空间不足等）
+                    ImportResult.StoreFailed -> skippedStoreFail++
                 }
             }
             // 只有增量同步和全量同步推进水位；最近N条/某天是"点播"，不动水位
@@ -369,7 +401,7 @@ object LanSyncManager {
                 settings.setLastSync(device.deviceId, maxTs)
             }
             refreshDevices()
-            SyncResult(added, skipped)
+            SyncResult(added, skipped, skippedStoreFail, skippedTooBig, skippedType)
         } finally {
             _syncing.value = _syncing.value - device.deviceId
         }
@@ -387,10 +419,13 @@ object LanSyncManager {
         return out
     }
 
-    /** 导入一条远端记录；返回 true = 新增，false = 去重跳过 */
-    private suspend fun importClip(obj: JsonObject, device: LanDevice): Boolean {
+    /** 单条导入结果 */
+    private enum class ImportResult { Added, Duplicate, StoreFailed }
+
+    /** 导入一条远端记录 */
+    private suspend fun importClip(obj: JsonObject, device: LanDevice): ImportResult {
         // 环回防护：内容本来就来自本机
-        if (obj.str("remoteDeviceId") == settings.deviceId) return false
+        if (obj.str("remoteDeviceId") == settings.deviceId) return ImportResult.Duplicate
 
         val type = obj.get("type").asInt
         val text = obj.str("text")
@@ -399,11 +434,11 @@ object LanSyncManager {
         val timestamp = obj.get("timestamp").asLong
 
         if (type == ClipType.TEXT) {
-            val content = text ?: return false
+            val content = text ?: return ImportResult.Duplicate
             val dup = repo.findDuplicateText(content)
             return if (dup != null) {
                 repo.touch(dup.id)
-                false
+                ImportResult.Duplicate
             } else {
                 repo.insertRemote(
                     ClipItem(
@@ -415,12 +450,12 @@ object LanSyncManager {
                         remoteId = originId
                     )
                 )
-                true
+                ImportResult.Added
             }
         }
 
         // 媒体：先下载到临时文件，去重后再决定保留
-        val fileName = obj.str("fileName") ?: return false
+        val fileName = obj.str("fileName") ?: return ImportResult.Duplicate
         val expectedSize = obj.lng("fileSize")
         val remoteId = obj.get("id").asLong
         val tmp = File(appContext.cacheDir, "lan_$remoteId.tmp")
@@ -428,30 +463,43 @@ object LanSyncManager {
             client.downloadFile(device, remoteId, tmp)
             if (tmp.length() == 0L || (expectedSize > 0 && tmp.length() != expectedSize)) {
                 tmp.delete()
-                return false
+                return ImportResult.Duplicate
+            }
+            // 实际大小再校验一次上限（元数据的 fileSize 可能缺失/不准）
+            if (tmp.length() > settings.syncMaxSizeBytes) {
+                Log.d(TAG, "媒体实际大小超过上限，丢弃: ${tmp.length()} 字节")
+                return ImportResult.Duplicate
             }
             val dup = repo.findDuplicateMedia(type, tmp)
             if (dup != null) {
                 tmp.delete()
                 repo.touch(dup.id)
-                false
+                ImportResult.Duplicate
             } else {
+                // 存储位置：用户设置的自定义目录（SAF），未设置则用默认的系统 Download/ClipDitto
                 val ext = fileName.substringAfterLast('.', "bin")
-                val dest = File(repo.mediaDir, "${timestamp}_lan.$ext")
-                tmp.renameTo(dest)
+                val name = "${timestamp}_lan.$ext"
+                val mime = obj.str("mimeType")
+                val stored = settings.syncDirUri?.let { tree ->
+                    MediaFiles.writeToTree(appContext, tree, name, mime, tmp)
+                } ?: MediaFiles.writeToDefaultDir(appContext, name, mime, tmp)
+                if (stored == null) {
+                    Log.w(TAG, "媒体落盘失败（目录权限失效/空间不足？）: $name")
+                    return ImportResult.StoreFailed
+                }
                 repo.insertRemote(
                     ClipItem(
                         type = type,
                         text = text,
-                        filePath = dest.absolutePath,
-                        mimeType = obj.str("mimeType"),
+                        filePath = stored,
+                        mimeType = mime,
                         sourceApp = obj.str("sourceApp"),
                         timestamp = timestamp,
                         remoteDeviceId = originDevice,
                         remoteId = originId
                     )
                 )
-                true
+                ImportResult.Added
             }
         } finally {
             tmp.delete()

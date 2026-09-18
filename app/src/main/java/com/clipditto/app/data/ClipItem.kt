@@ -10,7 +10,11 @@ data class ClipItem(
     val type: Int,
     /** 文字内容，或媒体/文件的预览文字（文件名等） */
     val text: String? = null,
-    /** 图片 / 文件 / 视频 复制到应用私有目录后的路径 */
+    /**
+     * 媒体内容的路径，两种形态：
+     * 本地绝对路径（应用私有目录：本机捕获、zip 导入还原）
+     * 或 content:// 文档 URI（同步下载到用户自定义目录）。读写统一走 MediaFiles。
+     */
     val filePath: String? = null,
     val mimeType: String? = null,
     /** 复制来源 App 的包名（取不到则为空） */

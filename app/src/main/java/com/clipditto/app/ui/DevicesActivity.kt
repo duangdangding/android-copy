@@ -2,6 +2,8 @@ package com.clipditto.app.ui
 
 import android.app.AlertDialog
 import android.app.DatePickerDialog
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
@@ -12,6 +14,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import androidx.lifecycle.lifecycleScope
@@ -44,6 +47,23 @@ class DevicesActivity : AppCompatActivity() {
     private var devices: List<LanDevice> = emptyList()
     private var syncing: Set<String> = emptySet()
     private val selected = mutableSetOf<String>()
+
+    /** SAF 目录选择器：同步下载文件的存储目录，选定后持久化读写权限 */
+    private val pickSyncDir =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri != null) {
+                runCatching {
+                    contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    )
+                }
+                LanSyncManager.settings().syncDirUri = uri.toString()
+                Toast.makeText(this, "已设置文件存储路径", Toast.LENGTH_SHORT).show()
+            }
+            refreshSyncSettingsUi()
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -81,6 +101,10 @@ class DevicesActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.tvPort).setOnClickListener { showPortDialog() }
         findViewById<TextView>(R.id.tvMyName).setOnClickListener { showRenameDialog() }
         findViewById<TextView>(R.id.tvBlacklist).setOnClickListener { showBlacklistDialog() }
+        findViewById<TextView>(R.id.tvSyncDir).setOnClickListener { showSyncDirDialog() }
+        findViewById<TextView>(R.id.tvSyncMaxSize).setOnClickListener { showSyncMaxSizeDialog() }
+        findViewById<TextView>(R.id.tvSyncTypes).setOnClickListener { showSyncTypesDialog() }
+        refreshSyncSettingsUi()
 
         findViewById<Button>(R.id.btnAddIp).setOnClickListener { showAddIpDialog() }
         findViewById<Button>(R.id.btnSweep).setOnClickListener {
@@ -582,6 +606,120 @@ class DevicesActivity : AppCompatActivity() {
         showSyncScopeDialog { scope -> doSync(actionable, scope) }
     }
 
+    // ---------------- 同步接收设置 ----------------
+
+    /** 刷新三个同步设置行的显示 */
+    private fun refreshSyncSettingsUi() {
+        val s = LanSyncManager.settings()
+        val dir = s.syncDirUri
+        findViewById<TextView>(R.id.tvSyncDir).text =
+            if (dir == null) "文件存储路径：默认（系统 Download/ClipDitto，点击更换）"
+            else "文件存储路径：${displayDirName(dir)}（点击更换/恢复默认）"
+        findViewById<TextView>(R.id.tvSyncMaxSize).text =
+            "同步文件大小上限：${s.syncMaxSizeMb}M（点击修改）"
+        val labels = s.syncTypeGroups.mapNotNull { LanSettings.GROUP_LABELS[it] }
+        findViewById<TextView>(R.id.tvSyncTypes).text =
+            "同步类型：${if (labels.isEmpty()) "（未勾选任何类型）" else labels.joinToString("、")}（点击修改）"
+    }
+
+    /** 把 SAF 树 URI 转为可读目录名，如 "primary:Download/clip" → "Download/clip" */
+    private fun displayDirName(treeUri: String): String =
+        runCatching {
+            Uri.decode(Uri.parse(treeUri).lastPathSegment ?: treeUri).substringAfter(':')
+        }.getOrDefault(treeUri)
+
+    private fun showSyncDirDialog() {
+        val hasDir = LanSyncManager.settings().syncDirUri != null
+        val items = if (hasDir) arrayOf("重新选择目录", "恢复默认（系统 Download/ClipDitto）")
+        else arrayOf("选择目录")
+        // AlertDialog 的 setItems 会占掉 message 区域，说明文字放进标题
+        AlertDialog.Builder(this)
+            .setTitle("文件存储路径（默认存到系统 Download/ClipDitto）")
+            .setItems(items) { _, which ->
+                when {
+                    which == 0 -> pickSyncDir.launch(null)
+                    which == 1 -> {
+                        LanSyncManager.settings().syncDirUri = null
+                        refreshSyncSettingsUi()
+                        Toast.makeText(
+                            this, "已恢复默认：系统 Download/ClipDitto", Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun showSyncMaxSizeDialog() {
+        val presets = intArrayOf(5, 10, 20, 50, 100, 200)
+        val labels = presets.map { "${it}M" }.toTypedArray() + "自定义…"
+        AlertDialog.Builder(this)
+            .setTitle("同步文件大小上限")
+            .setItems(labels) { _, which ->
+                if (which < presets.size) {
+                    LanSyncManager.settings().syncMaxSizeMb = presets[which]
+                    refreshSyncSettingsUi()
+                } else {
+                    showCustomMaxSizeDialog()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun showCustomMaxSizeDialog() {
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            hint = "上限（M）"
+        }
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val container = android.widget.FrameLayout(this).apply {
+            setPadding(pad, pad / 2, pad, 0)
+            addView(input)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("自定义大小上限")
+            .setView(container)
+            .setPositiveButton("确定") { _, _ ->
+                val n = input.text.toString().toIntOrNull()
+                if (n == null || n <= 0) {
+                    Toast.makeText(this, "请输入有效大小（M）", Toast.LENGTH_SHORT).show()
+                } else {
+                    LanSyncManager.settings().syncMaxSizeMb = n
+                    refreshSyncSettingsUi()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /** 同步类型多选：文字 / 图片 / 影视 / 其他（文件、音频归入"其他"） */
+    private fun showSyncTypesDialog() {
+        val groups = arrayOf(
+            LanSettings.GROUP_TEXT, LanSettings.GROUP_IMAGE,
+            LanSettings.GROUP_VIDEO, LanSettings.GROUP_OTHER
+        )
+        val labels = groups.map { LanSettings.GROUP_LABELS[it]!! }.toTypedArray()
+        val s = LanSyncManager.settings()
+        val checked = groups.map { it in s.syncTypeGroups }.toBooleanArray()
+        AlertDialog.Builder(this)
+            .setTitle("同步类型")
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                checked[which] = isChecked
+            }
+            .setPositiveButton("确定") { _, _ ->
+                val chosen = groups.filterIndexed { i, _ -> checked[i] }.toSet()
+                s.syncTypeGroups = chosen
+                refreshSyncSettingsUi()
+                if (chosen.isEmpty()) {
+                    Toast.makeText(this, "未勾选任何类型，同步将不会拉取内容", Toast.LENGTH_LONG).show()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
     // ---------------- 同步范围选择 ----------------
 
     /** 三种同步范围：最近 N 条 / 某一天 / 全部 */
@@ -667,10 +805,23 @@ class DevicesActivity : AppCompatActivity() {
     ) {
         lifecycleScope.launch {
             val results = LanSyncManager.syncDevices(actionable, scope)
+            val maxMb = LanSyncManager.settings().syncMaxSizeMb
             val sb = StringBuilder()
             results.forEach { (id, r) ->
                 val name = devices.firstOrNull { it.deviceId == id }?.displayName ?: id
-                r.onSuccess { sb.append("$name：新增 ${it.added} 条，去重 ${it.skipped} 条\n") }
+                r.onSuccess { res ->
+                    sb.append("$name：新增 ${res.added} 条，去重 ${res.skipped} 条\n")
+                    // 接收方过滤的跳过原因逐个提示
+                    if (res.skippedStoreFail > 0) {
+                        sb.append("　⚠️ ${res.skippedStoreFail} 条媒体存储失败（检查存储路径权限/空间）\n")
+                    }
+                    if (res.skippedTooBig > 0) {
+                        sb.append("　⚠️ ${res.skippedTooBig} 条超过大小上限（${maxMb}M），已跳过\n")
+                    }
+                    if (res.skippedType > 0) {
+                        sb.append("　⚠️ ${res.skippedType} 条类型未勾选，已跳过\n")
+                    }
+                }
                 r.onFailure {
                     val reason = when (it) {
                         is NeedPairingException -> "需要配对（点击设备输入配对码）"
@@ -701,9 +852,16 @@ class DevicesActivity : AppCompatActivity() {
             .setPositiveButton("删除") { _, _ ->
                 lifecycleScope.launch {
                     var total = 0
-                    targets.forEach { total += repo.deleteRemoteDevice(it.deviceId) }
-                    Toast.makeText(this@DevicesActivity, "已删除 $total 条", Toast.LENGTH_SHORT)
-                        .show()
+                    var fileFailures = 0
+                    targets.forEach {
+                        val (n, f) = repo.deleteRemoteDevice(it.deviceId)
+                        total += n
+                        fileFailures += f
+                    }
+                    val msg = if (fileFailures > 0)
+                        "已删除 $total 条（$fileFailures 个文件未能删除，可能已被手动移走）"
+                    else "已删除 $total 条"
+                    Toast.makeText(this@DevicesActivity, msg, Toast.LENGTH_LONG).show()
                 }
             }
             .setNegativeButton("取消", null)

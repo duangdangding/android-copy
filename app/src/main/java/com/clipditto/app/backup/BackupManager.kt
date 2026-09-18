@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.clipditto.app.data.ClipItem
 import com.clipditto.app.data.ClipRepository
+import com.clipditto.app.util.MediaFiles
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
@@ -34,20 +35,21 @@ object BackupManager {
                     // 1. 元数据：把 filePath 改写为 zip 内的相对路径，便于跨设备导入
                     val exportItems = items.map { item ->
                         item.filePath?.let { path ->
-                            item.copy(filePath = MEDIA_PREFIX + File(path).name)
+                            item.copy(filePath = MEDIA_PREFIX + MediaFiles.displayName(context, path))
                         } ?: item
                     }
                     zip.putNextEntry(ZipEntry(JSON_ENTRY))
                     zip.write(gson.toJson(exportItems).toByteArray(Charsets.UTF_8))
                     zip.closeEntry()
 
-                    // 2. 媒体文件
+                    // 2. 媒体文件（filePath 可能是本地路径或 content:// 文档 URI）
                     items.forEach { item ->
                         val path = item.filePath ?: return@forEach
-                        val file = File(path)
-                        if (file.exists()) {
-                            zip.putNextEntry(ZipEntry(MEDIA_PREFIX + file.name))
-                            file.inputStream().use { it.copyTo(zip) }
+                        MediaFiles.openInput(context, path)?.use { ins ->
+                            zip.putNextEntry(
+                                ZipEntry(MEDIA_PREFIX + MediaFiles.displayName(context, path))
+                            )
+                            ins.copyTo(zip)
                             zip.closeEntry()
                         }
                     }

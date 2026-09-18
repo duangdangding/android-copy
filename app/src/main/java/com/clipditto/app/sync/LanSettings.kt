@@ -36,6 +36,37 @@ class LanSettings(context: Context) {
         get() = prefs.getBoolean(KEY_AUTO_ACCEPT_PAIR, false)
         set(v) = prefs.edit().putBoolean(KEY_AUTO_ACCEPT_PAIR, v).apply()
 
+    // ---------------- 同步接收设置（本机作为接收方时生效） ----------------
+
+    /**
+     * 同步下载文件的存储目录（SAF 目录树 URI 字符串）。
+     * null = 未设置：存到默认的系统 Download/ClipDitto 目录。
+     */
+    var syncDirUri: String?
+        get() = prefs.getString(KEY_SYNC_DIR_URI, null)
+        set(v) = prefs.edit().putString(KEY_SYNC_DIR_URI, v).apply()
+
+    /** 同步文件大小上限（MB），超过的不下载；默认 20M */
+    var syncMaxSizeMb: Int
+        get() = prefs.getInt(KEY_SYNC_MAX_SIZE_MB, DEFAULT_SYNC_MAX_SIZE_MB)
+        set(v) = prefs.edit().putInt(KEY_SYNC_MAX_SIZE_MB, v).apply()
+
+    val syncMaxSizeBytes: Long
+        get() = syncMaxSizeMb * 1024L * 1024L
+
+    /** 同步类型分组，默认全选；元素见 [GROUP_TEXT] 等常量 */
+    var syncTypeGroups: Set<String>
+        get() = prefs.getStringSet(KEY_SYNC_TYPES, ALL_GROUPS) ?: ALL_GROUPS
+        set(v) = prefs.edit().putStringSet(KEY_SYNC_TYPES, v).apply()
+
+    /** 剪贴板类型 → 同步类型分组（FILE / AUDIO 都归入"其他"） */
+    fun syncGroupOf(type: Int): String = when (type) {
+        com.clipditto.app.data.ClipType.TEXT -> GROUP_TEXT
+        com.clipditto.app.data.ClipType.IMAGE -> GROUP_IMAGE
+        com.clipditto.app.data.ClipType.VIDEO -> GROUP_VIDEO
+        else -> GROUP_OTHER
+    }
+
     /** 本机设备唯一标识，首次启动生成后固定不变 */
     val deviceId: String
         get() {
@@ -216,6 +247,21 @@ class LanSettings(context: Context) {
         private const val KEY_BLOCKED_BY = "blocked_by_devices"
         private const val KEY_LAST_SYNC = "last_sync_"
         private const val KEY_PORT = "server_port"
+        private const val KEY_SYNC_DIR_URI = "sync_dir_uri"
+        private const val KEY_SYNC_MAX_SIZE_MB = "sync_max_size_mb"
+        private const val KEY_SYNC_TYPES = "sync_types"
         const val DEFAULT_PORT = 8765
+        const val DEFAULT_SYNC_MAX_SIZE_MB = 20
+
+        /** 同步类型分组常量 */
+        const val GROUP_TEXT = "text"
+        const val GROUP_IMAGE = "image"
+        const val GROUP_VIDEO = "video"
+        const val GROUP_OTHER = "other"
+        val ALL_GROUPS = setOf(GROUP_TEXT, GROUP_IMAGE, GROUP_VIDEO, GROUP_OTHER)
+        val GROUP_LABELS = mapOf(
+            GROUP_TEXT to "文字", GROUP_IMAGE to "图片",
+            GROUP_VIDEO to "影视", GROUP_OTHER to "其他"
+        )
     }
 }

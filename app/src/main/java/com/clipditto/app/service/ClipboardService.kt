@@ -45,6 +45,7 @@ import com.clipditto.app.ui.HistoryAdapter
 import com.clipditto.app.ui.ItemActionButtons
 import com.clipditto.app.ui.MainActivity
 import com.clipditto.app.util.FuzzySearch
+import com.clipditto.app.util.MediaFiles
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -983,17 +984,22 @@ class ClipboardService : Service() {
         }
     }
 
-    /** 图片 / 文件 / 视频：通过 FileProvider 放回系统剪贴板 */
+    /** 图片 / 文件 / 视频：放回系统剪贴板（私有目录走 FileProvider，自定义目录直接用 SAF Uri） */
     private fun copyMediaToClipboard(item: ClipItem) {
         val path = item.filePath ?: return
-        val file = File(path)
-        if (!file.exists()) {
+        if (!MediaFiles.exists(this, path)) {
             Toast.makeText(this, "文件已不存在", Toast.LENGTH_SHORT).show()
             return
         }
-        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        val uri = if (MediaFiles.isContentUri(path)) {
+            Uri.parse(path)
+        } else {
+            FileProvider.getUriForFile(this, "$packageName.fileprovider", File(path))
+        }
         ignoreNextChange = true
-        clipboard.setPrimaryClip(ClipData.newUri(contentResolver, item.text ?: file.name, uri))
+        clipboard.setPrimaryClip(
+            ClipData.newUri(contentResolver, item.text ?: MediaFiles.displayName(this, path), uri)
+        )
         makePanelFocusable(false)
         Toast.makeText(this, "已复制，请到目标位置粘贴", Toast.LENGTH_SHORT).show()
     }

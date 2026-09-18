@@ -7,7 +7,6 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import kotlinx.coroutines.runBlocking
 import java.io.BufferedInputStream
-import java.io.File
 import java.io.OutputStream
 import java.net.ServerSocket
 import java.net.Socket
@@ -188,12 +187,12 @@ class LanSyncServer(
         maybeAutoPair(headers, clientIp)
         val id = query["id"]?.toLongOrNull()
         val item = id?.let { runBlocking { repo.getById(it) } }
-        val file = item?.filePath?.let { File(it) }
-        if (file == null || !file.exists()) {
+        val path = item?.filePath
+        if (path == null || !repo.mediaExists(path)) {
             respond(output, 404, "text/plain", "File Not Found")
             return
         }
-        respondFile(output, file)
+        respondMedia(output, path)
     }
 
     /**
@@ -392,13 +391,14 @@ class LanSyncServer(
         output.flush()
     }
 
-    private fun respondFile(output: OutputStream, file: File) {
+    /** 媒体响应：filePath 可能是本地路径或 content:// 文档 URI，统一走 repo 访问 */
+    private fun respondMedia(output: OutputStream, path: String) {
         val head = "HTTP/1.1 200 OK\r\n" +
             "Content-Type: application/octet-stream\r\n" +
-            "Content-Length: ${file.length()}\r\n" +
+            "Content-Length: ${repo.mediaLength(path)}\r\n" +
             "Connection: close\r\n\r\n"
         output.write(head.toByteArray(StandardCharsets.UTF_8))
-        file.inputStream().use { it.copyTo(output) }
+        repo.openMedia(path)?.use { it.copyTo(output) }
         output.flush()
     }
 
@@ -448,10 +448,9 @@ class LanSyncServer(
         o.addProperty("remoteDeviceId", remoteDeviceId ?: settings.deviceId)
         o.addProperty("remoteId", remoteId ?: id)
         filePath?.let { p ->
-            val f = File(p)
-            if (f.exists()) {
-                o.addProperty("fileName", f.name)
-                o.addProperty("fileSize", f.length())
+            if (repo.mediaExists(p)) {
+                o.addProperty("fileName", repo.mediaName(p))
+                o.addProperty("fileSize", repo.mediaLength(p))
             }
         }
         return o
