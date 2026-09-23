@@ -111,6 +111,11 @@ class ClipRepository(private val context: Context) {
 
     suspend fun getSince(since: Long): List<ClipItem> = dao.getSince(since)
 
+    /** 局域网同步"最近 N 条"：纯时间倒序，不走水位；requesterId 为空表示不过滤来源 */
+    suspend fun getRecent(limit: Int, requesterId: String?): List<ClipItem> =
+        if (requesterId.isNullOrEmpty()) dao.getRecent(limit)
+        else dao.getRecentExcluding(requesterId, limit)
+
     suspend fun getById(id: Long): ClipItem? = dao.getById(id)
 
     /** 局域网同步：插入远端记录（调用方需已完成去重判断） */

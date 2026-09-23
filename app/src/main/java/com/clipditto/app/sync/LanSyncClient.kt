@@ -73,11 +73,18 @@ class LanSyncClient(
      * @param limit 可选，>0 时只取最新 N 条（"同步最近 N 条"用）
      * 本机开启加密传输时带临时公钥请求加密；对方不支持（旧版本）直接失败，不回退明文。
      */
-    fun fetchClips(device: LanDevice, since: Long, until: Long? = null, limit: Int = 0): ClipsResult {
+    fun fetchClips(
+        device: LanDevice,
+        since: Long,
+        until: Long? = null,
+        limit: Int = 0,
+        includeMine: Boolean = false
+    ): ClipsResult {
         val qs = buildString {
             append("since=").append(since)
             if (until != null) append("&until=").append(until)
             if (limit > 0) append("&limit=").append(limit)
+            if (includeMine) append("&includeMine=1")
         }
         val eph = if (settings.syncEncryption) SyncCrypto.generate() else null
         val conn = connect(

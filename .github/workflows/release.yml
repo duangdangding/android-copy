@@ -1,0 +1,46 @@
+# 打 tag 自动打包：推送任意标签（如 4.1）时构建 APK 并发布到 GitHub Releases
+# 本地手动触发：Actions 页面 → "Tag 打包发布" → Run workflow（需要同时指定 tag 名称）
+name: Tag 打包发布
+
+on:
+  push:
+    tags:
+      - "*"          # 仓库现有标签风格不带 v 前缀（如 3.0），这里匹配任意标签
+  workflow_dispatch: # 允许在 Actions 页手动重跑某个 tag 的打包
+
+permissions:
+  contents: write    # 创建 Release 需要
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码（取 tag 对应的提交）
+        uses: actions/checkout@v4
+
+      - name: 安装 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 安装 Gradle 8.7（仓库未提交 wrapper，仅提交了 wrapper 配置）
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: 组装 debug 包（产物名固定为 剪贴板_v<versionName>.apk）
+        run: gradle assembleDebug --no-daemon --console=plain
+
+      - name: 确认产物
+        run: ls -l app/build/outputs/apk/debug/
+
+      - name: 发布到 GitHub Releases 并附带 APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: 剪贴板 ${{ github.ref_name }}
+          generate_release_notes: true
+          files: app/build/outputs/apk/debug/*.apk
+        # 手动触发（workflow_dispatch）时 github.ref_name 不是 tag，跳过发布
+        if: github.event_name == 'push'

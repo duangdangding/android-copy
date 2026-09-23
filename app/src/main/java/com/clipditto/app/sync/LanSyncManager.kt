@@ -32,6 +32,9 @@ object LanSyncManager {
 
     private const val TAG = "LanSyncManager"
 
+    /** PC 端（copy-pc）/clips 的单次响应上限：返回条数达到它说明可能只拿到第一页 */
+    private const val PC_PAGE_SIZE = 500
+
     private lateinit var appContext: Context
     private lateinit var settings: LanSettings
     private lateinit var repo: ClipRepository
@@ -351,24 +354,62 @@ object LanSyncManager {
             }
             val until = (scope as? SyncScope.Day)?.let { it.dayStart + SyncScope.DAY_MS - 1 }
             val limit = (scope as? SyncScope.Recent)?.count ?: 0
-            val resp = try {
-                client.fetchClips(d, since, until, limit)
-            } catch (e: UnpairedException) {
-                // 对方已取消与本机的配对：本地同步解除配对状态
-                settings.removePairedDevice(device.deviceId)
-                refreshDevices()
-                throw e
+            // 手动圈范围同步（最近N条/某天/全部）：用户明确要对方的数据原样拉取，
+            // 包括"本来来自本机"的记录（本机可能已删除副本想恢复）；
+            // 自动增量同步保持环回防护，防止内容在两台设备间绕圈放大
+            val includeMine = scope != null
+            // 翻页兼容：PC 端（copy-pc）/clips 单次最多回 500 条且从"最旧"的开始给
+            // （不认 until/limit 参数）。若返回顶到页上限且服务端没按 limit 截断，
+            // 说明只拿到了第一页——用本页最大时间戳当新 since 继续向后翻，直到尾页
+            val raw = mutableListOf<JsonObject>()
+            var cursor = since
+            while (true) {
+                val resp = try {
+                    client.fetchClips(d, cursor, until, limit, includeMine)
+                } catch (e: UnpairedException) {
+                    // 对方已取消与本机的配对：本地同步解除配对状态
+                    settings.removePairedDevice(device.deviceId)
+                    refreshDevices()
+                    throw e
+                }
+                val batch = resp.items.map { it.asJsonObject }
+                raw.addAll(batch)
+                // 服务端认识 limit（安卓对安卓）时直接返回目标页，无需翻页；
+                // PC 端（copy-pc）不认 until/limit，只能靠翻页拿全后由下面的客户端兜底截取
+                val honoredLimit = limit > 0 && batch.size <= limit
+                val batchMax = batch.maxOfOrNull { it.get("timestamp").asLong } ?: cursor
+                // PC 的 created_at 是秒级精度：游标回退 1 秒再翻页，
+                // 防止页截断点落在同一秒中间时，该秒剩余记录被严格大于（>）的水位永久跳过；
+                // 重叠拉回的重复记录由下面的 distinctBy(id) + 入库内容去重兜住
+                val newCursor = batchMax - 999
+                // newCursor <= cursor：游标没有推进（整页同时间戳/已到边界），防死循环
+                if (honoredLimit || batch.size < PC_PAGE_SIZE || newCursor <= cursor) break
+                cursor = newCursor
+                Log.d(TAG, "对方分页返回（旧 PC 端？），向后翻页：已累积 ${raw.size} 条")
             }
-            val raw = resp.items
+            // 翻页重叠区会把同一批记录重复拉回，先按记录 id 去重
+            val distinct = raw.distinctBy { it.get("id").asLong }
             // 对方 App 可能是旧版本（服务端不认 until/limit，会全量返回）：
             // 客户端兜底再过滤一次，保证同步范围一定生效。
-            // 注意这里只多传了元数据 JSON，媒体文件是按入库项逐个下载的，不会被多拉
-            val clips = raw.map { it.asJsonObject }
+            // 注意这里只多传了元数据 JSON，媒体文件是按入库项逐个下载的，不会被多拉。
+            // limit 同样显式按时间倒序取前 N 条再转回升序，不依赖返回顺序
+            val clips = distinct
                 .filter { until == null || it.get("timestamp").asLong <= until }
-                .let { list -> if (limit > 0 && list.size > limit) list.takeLast(limit) else list }
-            if (clips.size != raw.size()) {
-                Log.d(TAG, "对方未按范围返回（旧版本？），客户端兜底过滤：${raw.size()} → ${clips.size} 条")
+                .let { list ->
+                    if (limit > 0 && list.size > limit) {
+                        list.sortedByDescending { it.get("timestamp").asLong }
+                            .take(limit)
+                            .sortedBy { it.get("timestamp").asLong }
+                    } else list
+                }
+            if (clips.size != distinct.size) {
+                Log.d(TAG, "对方未按范围返回（旧版本？），客户端兜底过滤：${distinct.size} → ${clips.size} 条")
             }
+            Log.d(
+                TAG, "收到 ${clips.size} 条，时间范围 " +
+                    "${clips.firstOrNull()?.get("timestamp")?.asLong}~" +
+                    "${clips.lastOrNull()?.get("timestamp")?.asLong}"
+            )
             var added = 0
             var skipped = 0
             var skippedStoreFail = 0
@@ -378,6 +419,10 @@ object LanSyncManager {
 
             val enabledGroups = settings.syncTypeGroups
             val maxBytes = settings.syncMaxSizeBytes
+            // 本批记录的原始最大时间戳：入库时把时间锚定到"到达时刻"，
+            // 保留批内相对间隔（最新一条 = 到达时刻，其余按原始间隔往前推），
+            // 这样同步来的内容排在列表最前，且批内顺序不打乱
+            val batchMaxTs = clips.maxOfOrNull { it.get("timestamp").asLong } ?: 0L
 
             clips.forEach { obj ->
                 maxTs = maxOf(maxTs, obj.get("timestamp").asLong)
@@ -391,7 +436,7 @@ object LanSyncManager {
                     // 超过大小上限（元数据里的 fileSize；下载后还会再校验一次实际大小）
                     if (obj.lng("fileSize") > maxBytes) { skippedTooBig++; return@forEach }
                 }
-                when (importClip(obj, d)) {
+                when (importClip(obj, d, batchMaxTs, includeMine)) {
                     ImportResult.Added -> added++
                     ImportResult.Duplicate -> skipped++
                     // 存储失败（目录权限失效/空间不足等）
@@ -424,16 +469,32 @@ object LanSyncManager {
     /** 单条导入结果 */
     private enum class ImportResult { Added, Duplicate, StoreFailed }
 
-    /** 导入一条远端记录 */
-    private suspend fun importClip(obj: JsonObject, device: LanDevice): ImportResult {
-        // 环回防护：内容本来就来自本机
-        if (obj.str("remoteDeviceId") == settings.deviceId) return ImportResult.Duplicate
+    /**
+     * 导入一条远端记录。
+     * @param batchMaxTs 本批记录的原始最大时间戳，用于把入库时间锚定到到达时刻：
+     *   displayTs = 现在 - (batchMaxTs - 原始时间)，批内相对顺序/间隔不变
+     * @param includeMine 手动圈范围同步时为 true：不拦截"本来来自本机"的记录，
+     *   交给内容去重兜底（本机还有副本则去重，已删除则恢复回来）
+     */
+    private suspend fun importClip(
+        obj: JsonObject,
+        device: LanDevice,
+        batchMaxTs: Long,
+        includeMine: Boolean = false
+    ): ImportResult {
+        // 环回防护：内容本来就来自本机（自动增量同步时拦截，避免绕圈放大）
+        if (!includeMine && obj.str("remoteDeviceId") == settings.deviceId) {
+            return ImportResult.Duplicate
+        }
 
         val type = obj.get("type").asInt
         val text = obj.str("text")
         val originDevice = obj.str("remoteDeviceId")
         val originId = obj.lng("remoteId")
-        val timestamp = obj.get("timestamp").asLong
+        val originalTs = obj.get("timestamp").asLong
+        // 锚定到到达时刻：列表按时间倒序，同步来的内容应出现在最前；
+        // 原始时间与批内最新时间的差值保留下来，整批相对顺序不乱
+        val timestamp = System.currentTimeMillis() - (batchMaxTs - originalTs).coerceAtLeast(0L)
 
         if (type == ClipType.TEXT) {
             val content = text ?: return ImportResult.Duplicate

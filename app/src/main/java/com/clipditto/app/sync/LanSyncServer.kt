@@ -20,7 +20,7 @@ import java.util.concurrent.Executors
  * 接口：
  * - GET /info           设备信息（无需配对码）
  * - GET /clips?since=[&until=][&limit=]  拉取记录（需配对码 + 共享开关开启）；
- *   until=时间上限（含），limit=只取最新 N 条，均为可选参数，旧客户端不带则行为不变
+ *   until=时间上限（含），limit=只取最新 N 条（纯按时间倒序取，不走 since 水位），均为可选参数
  * - GET /file?id=       拉取媒体文件（需配对码 + 共享开关开启）
  *
  * 配对码通过 X-Token 请求头传递；请求方在 X-Device-Id 里带自己的 deviceId，
@@ -164,13 +164,36 @@ class LanSyncServer(
         val since = query["since"]?.toLongOrNull() ?: 0L
         val until = query["until"]?.toLongOrNull() ?: Long.MAX_VALUE
         val limit = query["limit"]?.toIntOrNull() ?: 0
+        // includeMine=1：请求方手动圈范围同步时，明确允许回传"本来来自它"的记录
+        // （它可能已删除本机副本想恢复；去重由请求方按内容兜底，不会重复入库）
+        val includeMine = query["includeMine"] == "1"
         val requesterId = headers["x-device-id"] ?: ""
-        var items = runBlocking { repo.getSince(since) }
-            // 环回防护：不回传"本来就来自请求方"的记录
-            .filter { it.remoteDeviceId == null || it.remoteDeviceId != requesterId }
-            .filter { it.timestamp <= until }
-        // getSince 按时间升序，limit 取末尾 N 条即"最新 N 条"
-        if (limit > 0 && items.size > limit) items = items.takeLast(limit)
+        val items = if (limit > 0) {
+            // "最近 N 条"：不走水位（since/until 全部忽略），SQL 纯按时间倒序 LIMIT 取最新 N 条，
+            // 环回防护在 SQL 里完成；线上输出统一转回升序
+            val sql = if (includeMine)
+                "SELECT * FROM clips ORDER BY timestamp DESC LIMIT $limit"
+            else
+                "SELECT * FROM clips WHERE remoteDeviceId IS NULL OR remoteDeviceId != '$requesterId' ORDER BY timestamp DESC LIMIT $limit"
+            Log.d(TAG, "/clips 执行 SQL（最近N条，无水位）: $sql")
+            runBlocking { repo.getRecent(limit, if (includeMine) null else requesterId) }
+                .sortedBy { it.timestamp }
+        } else {
+            Log.d(
+                TAG, "/clips 执行 SQL（水位增量）: " +
+                    "SELECT * FROM clips WHERE timestamp > $since ORDER BY timestamp ASC" +
+                    "（代码过滤: timestamp <= $until" +
+                    (if (includeMine) "" else " 且排除来自 $requesterId 的记录") + "）"
+            )
+            runBlocking { repo.getSince(since) }
+                // 环回防护：默认不回传"本来就来自请求方"的记录（防止内容绕圈放大）
+                .filter { includeMine || it.remoteDeviceId == null || it.remoteDeviceId != requesterId }
+                .filter { it.timestamp <= until }
+        }
+        Log.d(
+            TAG, "/clips since=$since until=$until limit=$limit → " +
+                "返回 ${items.size} 条，时间范围 ${items.firstOrNull()?.timestamp}~${items.lastOrNull()?.timestamp}"
+        )
         val list = items.map { it.toWire() }
         // 请求带 X-Pub-Key（对方开了加密传输）时加密响应
         val enc = encryptionFor(headers)

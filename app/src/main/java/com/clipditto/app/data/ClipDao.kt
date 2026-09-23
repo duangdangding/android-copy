@@ -71,6 +71,18 @@ interface ClipDao {
     @Query("SELECT * FROM clips WHERE timestamp > :since ORDER BY timestamp ASC")
     suspend fun getSince(since: Long): List<ClipItem>
 
+    /**
+     * 局域网同步"最近 N 条"：纯按时间倒序取最新 N 条，不走增量水位（since）。
+     * 环回防护直接在 SQL 里做：不回传"本来就来自请求方"的记录，
+     * 否则先 LIMIT 再在代码里过滤会导致返回不足 N 条。
+     */
+    @Query("SELECT * FROM clips WHERE remoteDeviceId IS NULL OR remoteDeviceId != :requesterId ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun getRecentExcluding(requesterId: String, limit: Int): List<ClipItem>
+
+    /** 同 getRecentExcluding，但不过滤来源（请求方手动圈范围同步、明确要回传自己的记录时用） */
+    @Query("SELECT * FROM clips ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun getRecent(limit: Int): List<ClipItem>
+
     @Query("SELECT * FROM clips WHERE id = :id")
     suspend fun getById(id: Long): ClipItem?
 
