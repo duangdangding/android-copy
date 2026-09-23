@@ -37,7 +37,7 @@ jobs:
         run: |
           ls -l app/build/outputs/apk/debug/
           mkdir -p release
-          cp app/build/outputs/apk/debug/*.apk "release/ClipDitto_v${{ github.ref_name }}.apk"
+          cp app/build/outputs/apk/debug/*.apk "release/lscopy_v${{ github.ref_name }}.apk"
           ls -l release/
 
       - name: 发布到 GitHub Releases 并附带 APK
