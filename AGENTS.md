@@ -20,6 +20,7 @@
   - 安装到设备：`adb install -r app/build/outputs/apk/debug/剪贴板_v<versionName>.apk`
   - 无单元测试 / UI 测试目录，验证靠真机运行
 - 打包产物文件名固定为 `剪贴板_v${versionName}.apk`（见 `app/build.gradle` 的 `applicationVariants` 配置），发版时在 `app/build.gradle` 里递增 `versionCode` 并改 `versionName`
+- **发版**：根目录 `release.ps1` 一键完成"递增版本号 → 编译验证 → 提交 → 打 tag → 推送"，推送 tag 后 GitHub Actions（`.github/workflows/release.yml`）自动打包并把 `lscopy_v<tag>.apk` 传到 Releases。用法：`.\release.ps1 -Version 4.2 -Message "改动说明"`
 
 ## 目录结构（app/src/main/java/com/clipditto/app/）
 
