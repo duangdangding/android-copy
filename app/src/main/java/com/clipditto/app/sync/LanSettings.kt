@@ -240,6 +240,11 @@ class LanSettings(context: Context) {
         prefs.edit().putLong("$KEY_LAST_SYNC$deviceId", ts).apply()
     }
 
+    /** 删除设备时清理同步水位，避免残留无用键 */
+    fun removeLastSync(deviceId: String) {
+        prefs.edit().remove("$KEY_LAST_SYNC$deviceId").apply()
+    }
+
     companion object {
         /** 型号代码 → 营销名对照表（系统 device_name 不可靠时使用） */
         private val KNOWN_MODELS = mapOf(

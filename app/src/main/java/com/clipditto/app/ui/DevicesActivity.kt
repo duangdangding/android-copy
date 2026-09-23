@@ -471,10 +471,37 @@ class DevicesActivity : AppCompatActivity() {
             return
         }
         when {
-            !d.online -> Toast.makeText(this, "设备不在线", Toast.LENGTH_SHORT).show()
+            !d.online -> showOfflineDeviceMenu(d)
             !d.paired -> showUnpairedMenu(d)
             else -> showDeviceMenu(d)
         }
+    }
+
+    /** 离线设备点击：删除同步来的记录 / 从列表移除 */
+    private fun showOfflineDeviceMenu(d: LanDevice) {
+        AlertDialog.Builder(this)
+            .setTitle("${d.displayName}（离线）")
+            .setItems(arrayOf("删除该设备同步来的记录", "从列表移除该设备")) { _, which ->
+                when (which) {
+                    0 -> confirmDeleteRemote(listOf(d))
+                    1 -> confirmRemoveDevice(d)
+                }
+            }
+            .show()
+    }
+
+    /** 删除离线设备确认：解除本地配对并清理同步水位，列表不再残留 */
+    private fun confirmRemoveDevice(d: LanDevice) {
+        AlertDialog.Builder(this)
+            .setTitle("移除设备")
+            .setMessage("把「${d.displayName}」从列表移除？\n将解除本地配对并清理同步进度，已同步到本机的记录保留。")
+            .setPositiveButton("移除") { _, _ ->
+                selected.remove(d.deviceId)
+                LanSyncManager.removeDevice(d)
+                Toast.makeText(this, "已移除「${d.displayName}」", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     /** 未配对设备点击：配对 / 加入黑名单 */

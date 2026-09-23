@@ -253,6 +253,21 @@ object LanSyncManager {
         }
     }
 
+    /**
+     * 手动删除设备（主要用于清理列表里残留的离线设备）：
+     * 本地解除配对 + 清理增量同步水位，彻底从列表移除；
+     * 同步到本机的历史记录保留（如需删除走「删除该设备同步来的记录」）。
+     * 对方若恰好在线，尽力通知其解除配对（不在线则静默失败，对端靠被动流程兜底）。
+     */
+    fun removeDevice(device: LanDevice) {
+        settings.removePairedDevice(device.deviceId)
+        settings.removeLastSync(device.deviceId)
+        refreshDevices()
+        device.takeIf { it.host != null && it.token != null }?.let { d ->
+            scope.launch { runCatching { client.notifyUnpair(d) } }
+        }
+    }
+
     /** 把设备加入黑名单（含未配对设备）：无法对它操作，它也无法扫描/操作本机 */
     fun blockDevice(device: LanDevice) {
         settings.removePairedDevice(device.deviceId)
