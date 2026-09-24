@@ -1,9 +1,13 @@
 package com.clipditto.app.ui
 
 import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Paint
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Button
@@ -21,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -44,6 +49,19 @@ class AboutActivity : AppCompatActivity() {
 
         findViewById<TextView>(R.id.tvVersion).text =
             "当前版本：${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+
+        // 签名指纹：截断显示前 16 字节，长按复制完整值（用于比对两台设备/安装包签名是否一致）
+        findViewById<TextView>(R.id.tvSignature).apply {
+            val full = loadSignatureSha256()
+            text = "签名 SHA-256：" +
+                full.split(":").take(16).joinToString(":") + "…（长按复制）"
+            setOnLongClickListener {
+                val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("签名 SHA-256", full))
+                Toast.makeText(this@AboutActivity, "已复制完整签名指纹", Toast.LENGTH_SHORT).show()
+                true
+            }
+        }
 
         findViewById<Button>(R.id.btnCheckUpdate).setOnClickListener {
             checkUpdate(manual = true)
@@ -75,6 +93,29 @@ class AboutActivity : AppCompatActivity() {
                     Toast.makeText(this@AboutActivity, "无法打开浏览器", Toast.LENGTH_SHORT).show()
                 }
             }
+        }
+    }
+
+    /**
+     * 本应用签名证书的 SHA-256（`AA:BB:…` 大写冒号分隔）。
+     * API 28+ 用 GET_SIGNING_CERTIFICATES，低版本回退 deprecated 的 GET_SIGNATURES。
+     */
+    @Suppress("DEPRECATION")
+    private fun loadSignatureSha256(): String {
+        return try {
+            val certBytes = if (Build.VERSION.SDK_INT >= 28) {
+                packageManager
+                    .getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+                    .signingInfo?.apkContentsSigners?.firstOrNull()?.toByteArray()
+            } else {
+                packageManager
+                    .getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
+                    .signatures?.firstOrNull()?.toByteArray()
+            } ?: return "获取失败"
+            MessageDigest.getInstance("SHA-256").digest(certBytes)
+                .joinToString(":") { "%02X".format(it) }
+        } catch (e: Exception) {
+            "获取失败"
         }
     }
 
@@ -168,11 +209,30 @@ class AboutActivity : AppCompatActivity() {
                 )
             }
             runCatching { dialog.dismiss() }
-            when {
-                apk != null -> installApk(apk)
-                !cancelled.get() ->
-                    Toast.makeText(this@AboutActivity, "下载失败，请重试", Toast.LENGTH_SHORT).show()
+            if (apk == null) {
+                if (!cancelled.get()) Toast.makeText(
+                    this@AboutActivity, "下载失败，请重试", Toast.LENGTH_SHORT
+                ).show()
+                return@launch
             }
+            // release 附带 .sha256 校验文件时比对哈希；旧 release 没有则跳过校验
+            if (info.sha256Url != null) {
+                tvProgress.text = "校验中…"
+                val expected = withContext(Dispatchers.IO) {
+                    UpdateChecker.fetchSha256(info.sha256Url)
+                }
+                val actual = withContext(Dispatchers.IO) { UpdateChecker.sha256(apk) }
+                runCatching { dialog.dismiss() }
+                if (expected == null || !actual.equals(expected, ignoreCase = true)) {
+                    apk.delete()
+                    Toast.makeText(
+                        this@AboutActivity, "安装包校验失败，请重新下载", Toast.LENGTH_LONG
+                    ).show()
+                    return@launch
+                }
+                Toast.makeText(this@AboutActivity, "校验通过", Toast.LENGTH_SHORT).show()
+            }
+            installApk(apk)
         }
     }
 

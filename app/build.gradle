@@ -4,9 +4,38 @@ plugins {
     id 'com.google.devtools.ksp'
 }
 
+// ===== 发布签名配置 =====
+// 优先级：项目根目录 keystore.properties > 环境变量（CI 用）。
+// keystore.properties 被 .gitignore 排除，密钥与密码绝不进 git。
+def keystorePropsFile = rootProject.file('keystore.properties')
+def signingProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { signingProps.load(it) }
+}
+def ksStoreFile = signingProps.getProperty('storeFile') ?: System.getenv('KEYSTORE_FILE')
+def ksStorePassword = signingProps.getProperty('storePassword') ?: System.getenv('KEYSTORE_PASSWORD')
+def ksKeyAlias = signingProps.getProperty('keyAlias') ?: System.getenv('KEY_ALIAS')
+def ksKeyPassword = signingProps.getProperty('keyPassword') ?: System.getenv('KEY_PASSWORD')
+def signingReady = [ksStoreFile, ksStorePassword, ksKeyAlias, ksKeyPassword].every { it }
+
 android {
     namespace 'com.clipditto.app'
     compileSdk 34
+
+    signingConfigs {
+        release {
+            if (signingReady) {
+                // keystore.properties 里 storeFile 相对 app/ 模块目录（如 ../keystore/clipditto.jks）；
+                // 环境变量路径兜底按项目根目录解析
+                def f = file(ksStoreFile)
+                if (!f.exists()) f = rootProject.file(ksStoreFile)
+                storeFile f
+                storePassword ksStorePassword
+                keyAlias ksKeyAlias
+                keyPassword ksKeyPassword
+            }
+        }
+    }
 
     defaultConfig {
         applicationId "com.clipditto.app"
@@ -15,8 +44,8 @@ android {
         // ===== 版本号：每次发版改这里 =====
         // versionCode：整数，只能递增（1, 2, 3...），系统靠它判断"是不是新版本"
         // versionName：给人看的版本字符串，显示在应用信息里
-        versionCode 13
-        versionName "4.3"
+        versionCode 14
+        versionName "4.4"
     }
 
     // ===== 打包后的 APK 文件名 =====
@@ -32,6 +61,9 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (signingReady) {
+                signingConfig signingConfigs.release
+            }
         }
     }
     compileOptions {
@@ -46,6 +78,21 @@ android {
         buildConfig true
         // AGP 8 起 AIDL 默认关闭；Shizuku 桥接接口 IClipboardBridge 需要
         aidl true
+    }
+}
+
+// ===== release 构建必须有签名 =====
+// keystore.properties 与环境变量都缺失时，assembleRelease 直接报清晰错误，
+// 避免静默产出未签名/调试签名的包（debug 构建不受影响）
+tasks.matching { it.name == 'assembleRelease' }.configureEach {
+    doFirst {
+        if (!signingReady) {
+            throw new GradleException(
+                '未找到发布签名配置，无法构建 release 包。\n' +
+                '请在项目根目录创建 keystore.properties（storeFile/storePassword/keyAlias/keyPassword），' +
+                '或设置环境变量 KEYSTORE_FILE / KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD。'
+            )
+        }
     }
 }
 

@@ -29,23 +29,51 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: 组装 debug 包（产物名固定为 剪贴板_v<versionName>.apk）
-        run: gradle assembleDebug --no-daemon --console=plain
+      - name: 还原发布密钥库（Secrets 未配置则直接失败，不回退 debug 签名）
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "::error::缺少发布签名 Secrets：请到仓库 Settings → Secrets and variables → Actions 配置 KEYSTORE_BASE64 / KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD"
+            exit 1
+          fi
+          mkdir -p keystore
+          echo "$KEYSTORE_BASE64" | base64 -d > keystore/clipditto.jks
+          # 密码只写进本地文件（该文件已被 .gitignore 排除），不打印到日志
+          {
+            echo "storeFile=../keystore/clipditto.jks"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > keystore.properties
+          chmod 600 keystore/clipditto.jks keystore.properties
+          echo "密钥库已还原：keystore/clipditto.jks"
 
-      - name: 确认产物并复制为 ASCII 文件名
+      - name: 组装签名 release 包（产物名固定为 剪贴板_v<versionName>.apk）
+        run: gradle assembleRelease --no-daemon --console=plain
+
+      - name: 确认产物并复制为 ASCII 文件名 + 生成 SHA-256 校验值
         # 中文名 APK 在 Releases 资产上传/下载时兼容性差，统一复制一份 ASCII 名用于发布
         run: |
-          ls -l app/build/outputs/apk/debug/
+          ls -l app/build/outputs/apk/release/
           mkdir -p release
-          cp app/build/outputs/apk/debug/*.apk "release/lscopy_v${{ github.ref_name }}.apk"
-          ls -l release/
+          cp app/build/outputs/apk/release/*.apk "release/lscopy_v${{ github.ref_name }}.apk"
+          cd release
+          sha256sum "lscopy_v${{ github.ref_name }}.apk" > "lscopy_v${{ github.ref_name }}.apk.sha256"
+          cat "lscopy_v${{ github.ref_name }}.apk.sha256"
+          ls -l
 
-      - name: 发布到 GitHub Releases 并附带 APK
+      - name: 发布到 GitHub Releases 并附带 APK 与校验文件
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: 剪贴板 ${{ github.ref_name }}
           generate_release_notes: true
-          files: release/*.apk
+          files: |
+            release/*.apk
+            release/*.sha256
         # 手动触发（workflow_dispatch）时 github.ref_name 不是 tag，跳过发布
         if: github.event_name == 'push'

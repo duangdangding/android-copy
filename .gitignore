@@ -25,6 +25,8 @@ app/release/
 # ---------- 签名密钥（绝对不能上传） ----------
 *.jks
 *.keystore
+keystore.properties
+keystore/*.base64
 
 # ---------- 其他 ----------
 *.log

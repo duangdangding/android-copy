@@ -8,6 +8,7 @@ import com.google.gson.JsonObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 
 /**
  * 版本更新检查与安装包下载（GitHub Releases 渠道，仓库 duangdangding/android-copy）。
@@ -28,7 +29,9 @@ object UpdateChecker {
         /** 更新日志（release body） */
         val body: String,
         /** APK 资产下载地址（取 assets 中以 .apk 结尾的那个） */
-        val apkUrl: String
+        val apkUrl: String,
+        /** SHA-256 校验文件下载地址（assets 中以 .sha256 结尾的那个；旧 release 没有则为 null） */
+        val sha256Url: String?
     )
 
     /** 查询最新 release；网络失败/无 APK 资产/解析失败返回 null */
@@ -48,11 +51,12 @@ object UpdateChecker {
             val body = conn.inputStream.bufferedReader().use { it.readText() }
             val json = gson.fromJson(body, JsonObject::class.java)
             val tag = json.get("tag_name")?.asString?.removePrefix("v") ?: return null
-            val apkUrl = json.getAsJsonArray("assets")
+            val assetUrls = json.getAsJsonArray("assets")
                 ?.mapNotNull { it.asJsonObject.get("browser_download_url")?.asString }
-                ?.firstOrNull { it.endsWith(".apk") }
                 ?: return null
-            ReleaseInfo(tag, json.get("body")?.asString ?: "", apkUrl)
+            val apkUrl = assetUrls.firstOrNull { it.endsWith(".apk") } ?: return null
+            val sha256Url = assetUrls.firstOrNull { it.endsWith(".sha256") }
+            ReleaseInfo(tag, json.get("body")?.asString ?: "", apkUrl, sha256Url)
         } catch (e: Exception) {
             Log.w(TAG, "查询最新版本异常: ${e.message}")
             null
@@ -138,5 +142,53 @@ object UpdateChecker {
             conn.disconnect()
             tmp.delete()
         }
+    }
+
+    /**
+     * 下载 .sha256 校验文本并解析出哈希值（sha256sum 标准格式：`<hash>  <文件名>`）。
+     * @return 64 位小写十六进制哈希；网络失败/格式不符返回 null
+     */
+    fun fetchSha256(url: String): String? {
+        val conn = URL(url).openConnection() as HttpURLConnection
+        return try {
+            conn.connectTimeout = 10_000
+            conn.readTimeout = 10_000
+            conn.instanceFollowRedirects = true
+            conn.setRequestProperty(
+                "User-Agent", "ClipDitto-Android/${BuildConfig.VERSION_NAME}"
+            )
+            if (conn.responseCode != 200) {
+                Log.w(TAG, "下载校验文件失败: HTTP ${conn.responseCode}")
+                return null
+            }
+            val text = conn.inputStream.bufferedReader().use { it.readText() }
+            // 取第一行第一个空白分隔的 token，须为 64 位十六进制
+            val hash = text.lineSequence().firstOrNull { it.isNotBlank() }
+                ?.trim()?.split(Regex("\\s+"))?.firstOrNull()
+                ?.lowercase()
+            if (hash != null && hash.matches(Regex("[0-9a-f]{64}"))) hash else {
+                Log.w(TAG, "校验文件格式不符: ${text.take(100)}")
+                null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "下载校验文件异常: ${e.message}")
+            null
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    /** 计算文件的 SHA-256（64 位小写十六进制） */
+    fun sha256(file: File): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buf = ByteArray(64 * 1024)
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                md.update(buf, 0, n)
+            }
+        }
+        return md.digest().joinToString("") { "%02x".format(it) }
     }
 }
