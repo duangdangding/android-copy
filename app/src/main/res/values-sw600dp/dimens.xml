@@ -5,4 +5,9 @@
     <dimen name="scan_btn_padding_h">16dp</dimen>
     <dimen name="scan_btn_min_w">88dp</dimen>
     <dimen name="scan_btn_min_h">48dp</dimen>
+
+    <!-- 主页顶部按钮：平板保持原大小 -->
+    <dimen name="main_btn_text_size">14sp</dimen>
+    <dimen name="main_btn_min_h">48dp</dimen>
+    <dimen name="main_btn_inset_v">4dp</dimen>
 </resources>

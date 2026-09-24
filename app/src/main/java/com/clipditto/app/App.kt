@@ -15,6 +15,8 @@ class App : Application() {
         runCatching { com.clipditto.app.service.ShizukuClipboard.init() }
         // 局域网同步：按开关状态恢复服务/发现
         runCatching { LanSyncManager.init(this) }
+        // 文件共享：按开关状态恢复接收服务/在线广播
+        runCatching { com.clipditto.app.share.FileShareManager.init(this) }
     }
 
     private fun createNotificationChannel() {
@@ -29,14 +31,22 @@ class App : Application() {
             "同步结果",
             NotificationManager.IMPORTANCE_LOW
         )
+        // 文件共享接收请求：需要用户及时处理，用高重要性（横幅+声音）
+        val fileShareChannel = NotificationChannel(
+            CHANNEL_FILE_SHARE,
+            "文件共享",
+            NotificationManager.IMPORTANCE_HIGH
+        )
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(channel)
         nm.createNotificationChannel(syncChannel)
+        nm.createNotificationChannel(fileShareChannel)
     }
 
     companion object {
         const val CHANNEL_ID = "clipboard_monitor"
         const val CHANNEL_SYNC = "sync_result"
+        const val CHANNEL_FILE_SHARE = "file_share"
         lateinit var instance: App
             private set
     }

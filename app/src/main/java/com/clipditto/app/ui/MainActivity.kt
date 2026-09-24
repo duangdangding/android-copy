@@ -25,6 +25,7 @@ import androidx.core.widget.addTextChangedListener
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.clipditto.app.BuildConfig
 import com.clipditto.app.R
 import com.clipditto.app.backup.BackupManager
 import com.clipditto.app.data.ClipItem
@@ -36,8 +37,10 @@ import com.clipditto.app.service.PasteAccessibilityService
 import com.clipditto.app.service.ShizukuClipboard
 import com.clipditto.app.util.FuzzySearch
 import com.clipditto.app.util.StorageStats
+import com.clipditto.app.util.UpdateChecker
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -45,6 +48,12 @@ import java.util.Date
 import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
+
+    companion object {
+        /** 本进程是否已做过自动静默检查更新（避免重建 Activity 反复弹） */
+        @Volatile
+        private var autoUpdateChecked = false
+    }
 
     private lateinit var repo: ClipRepository
     private lateinit var adapter: HistoryAdapter
@@ -107,10 +116,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         btnToggle.setOnClickListener { toggleService() }
-        findViewById<Button>(R.id.btnAccessibility).setOnClickListener {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            Toast.makeText(this, "请在列表中找到「共享剪贴-卢」并开启", Toast.LENGTH_LONG).show()
-        }
+        // 无障碍开启入口已合并到顶部状态栏（tvStatus 点我开启）
         findViewById<Button>(R.id.btnDeleteRange).setOnClickListener { showDeleteRangeDialog() }
         findViewById<Button>(R.id.btnBackup).setOnClickListener {
             backupLauncher.launch("clipditto_backup_${System.currentTimeMillis()}.zip")
@@ -121,6 +127,18 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnMaxRecords).setOnClickListener { showMaxRecordsDialog() }
         findViewById<Button>(R.id.btnLanSync).setOnClickListener {
             startActivity(Intent(this, DevicesActivity::class.java))
+        }
+        findViewById<Button>(R.id.btnFileShare).setOnClickListener {
+            startActivity(Intent(this, FileShareActivity::class.java))
+        }
+        findViewById<Button>(R.id.btnAbout).setOnClickListener {
+            startActivity(Intent(this, AboutActivity::class.java))
+        }
+
+        // 静默检查更新：每个进程只自动查一次，无新版/失败都不打扰
+        if (!autoUpdateChecked) {
+            autoUpdateChecked = true
+            checkUpdateSilently()
         }
 
         findViewById<Button>(R.id.btnShizuku).setOnClickListener { onShizukuClick() }
@@ -547,6 +565,36 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    // ---------------- 版本更新 ----------------
+
+    /**
+     * 静默检查更新：只在发现新版本时弹窗提示；「立即更新」跳到「关于」页处理
+     * 下载与安装（下载/安装流程集中在 AboutActivity，主页不持有）。
+     */
+    private fun checkUpdateSilently() {
+        lifecycleScope.launch {
+            val info = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                UpdateChecker.fetchLatest()
+            }
+            if (isFinishing || isDestroyed) return@launch
+            if (info == null ||
+                !UpdateChecker.isNewer(info.tag, BuildConfig.VERSION_NAME)
+            ) return@launch
+            val log = info.body.trim().let { if (it.length > 500) it.take(500) + "…" else it }
+            AlertDialog.Builder(this@MainActivity)
+                .setTitle("发现新版本 ${info.tag}")
+                .setMessage(
+                    "当前版本：${BuildConfig.VERSION_NAME}\n\n" +
+                        if (log.isBlank()) "（无更新日志）" else log
+                )
+                .setPositiveButton("立即更新") { _, _ ->
+                    startActivity(Intent(this@MainActivity, AboutActivity::class.java))
+                }
+                .setNegativeButton("暂不更新", null)
+                .show()
+        }
     }
 
     // ---------------- 备份 / 导入 ----------------

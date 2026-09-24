@@ -62,7 +62,7 @@ object LanSyncManager {
         settings = LanSettings(appContext)
         repo = ClipRepository(appContext)
         server = LanSyncServer(
-            settings, repo,
+            appContext, settings, repo,
             onAutoPair = { autoPaired ->
                 // 对方配对成功后的反向自动配对：直接存为已配对设备
                 settings.savePairedDevice(autoPaired)
@@ -105,6 +105,12 @@ object LanSyncManager {
     val serverRunning: Boolean get() = initialized && server.isRunning
     val serverPort: Int get() = if (initialized) server.port else 0
 
+    /** 注册/注销文件共享接收处理器（由 FileShareManager 调用；null = 注销） */
+    fun setFsHandler(handler: FsReceiveHandler?) {
+        if (!initialized) return
+        server.fsHandler = handler
+    }
+
     /** 修改端口后调用：重启服务并按需重新注册广播 */
     fun restartServer() {
         if (!initialized) return
@@ -125,15 +131,13 @@ object LanSyncManager {
         }
     }
 
-    /** 开关变化后调用：按需启停服务 / 注册 / 扫描 */
+    /** 开关变化后调用：按需启停注册 / 扫描；服务本身常开 */
     fun applyState() {
         if (!initialized) return
-        // 服务：共享或可被发现时都需要（发现后对方会请求 /info）
-        if (settings.sharing || settings.discoverable) {
-            server.start()
-        } else {
-            server.stop()
-        }
+        // 服务无条件常开：文件共享接收常驻（POST /fs/send 不走配对鉴权），
+        // 即使共享/可被发现都关闭，也要能被其他设备发送文件；
+        // 同步的 /clips、/file 等内容路由仍各自校验开关与配对码，不受影响
+        server.start()
         // 注册：仅"可被发现"开启时广播自己
         if (settings.discoverable && server.isRunning) {
             discovery.registerService(server.port)

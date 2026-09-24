@@ -1,5 +1,6 @@
 package com.clipditto.app.sync
 
+import android.content.Context
 import android.util.Log
 import com.clipditto.app.data.ClipItem
 import com.clipditto.app.data.ClipRepository
@@ -7,12 +8,38 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import kotlinx.coroutines.runBlocking
 import java.io.BufferedInputStream
+import java.io.EOFException
+import java.io.File
+import java.io.InputStream
 import java.io.OutputStream
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * 文件共享（POST /fs/send）接收处理器：由 share 包的 FileShareManager 注册/注销。
+ * 定义在 sync 包以避免 sync → share 的反向依赖；文件共享本身免配对、免 token。
+ */
+interface FsReceiveHandler {
+    /** 文件共享「允许接收文件」开关是否开启 */
+    fun isEnabled(): Boolean
+
+    /** 等待用户确认是否接收（自动接收时直接返回 true），可阻塞最多 30 秒 */
+    fun awaitAccept(
+        fileName: String, fileSize: Long, mime: String?,
+        fromDeviceId: String?, fromDeviceName: String
+    ): Boolean
+
+    /** 接收确认后落盘并写传送记录，返回保存路径；失败返回 null */
+    fun persist(
+        fileName: String, mime: String?,
+        fromDeviceId: String?, fromDeviceName: String,
+        tmpFile: File
+    ): String?
+}
 
 /**
  * 本机局域网 HTTP 服务，向其他设备提供剪贴板内容。
@@ -22,11 +49,14 @@ import java.util.concurrent.Executors
  * - GET /clips?since=[&until=][&limit=]  拉取记录（需配对码 + 共享开关开启）；
  *   until=时间上限（含），limit=只取最新 N 条（纯按时间倒序取，不走 since 水位），均为可选参数
  * - GET /file?id=       拉取媒体文件（需配对码 + 共享开关开启）
+ * - POST /fs/send       文件共享接收（免配对免 token，由 [FsReceiveHandler] 处理）
+ * - POST /recv          PC 端（copy-pc）文件发送接口（同样走文件共享流程）
  *
  * 配对码通过 X-Token 请求头传递；请求方在 X-Device-Id 里带自己的 deviceId，
  * 服务端据此过滤掉"本来就来自该设备"的记录，避免内容在两台设备间循环复制。
  */
 class LanSyncServer(
+    private val context: Context,
     private val settings: LanSettings,
     private val repo: ClipRepository,
     /** 对方通过鉴权后回调，用于自动反向配对（一方手动配对，双方生效） */
@@ -47,6 +77,13 @@ class LanSyncServer(
     private val pool = Executors.newCachedThreadPool()
     private var serverSocket: ServerSocket? = null
     @Volatile private var running = false
+
+    /** 文件共享接收处理器（FileShareManager 注册/注销；null = 未启用） */
+    @Volatile
+    var fsHandler: FsReceiveHandler? = null
+
+    /** /fs/send 临时文件序号，避免同毫秒重名 */
+    private val fsTmpSeq = AtomicInteger(0)
 
     val port: Int get() = serverSocket?.localPort ?: 0
     val isRunning: Boolean get() = running
@@ -93,10 +130,11 @@ class LanSyncServer(
 
             val requestLine = readLine(input) ?: return
             val parts = requestLine.split(" ")
-            if (parts.size < 2 || parts[0] != "GET") {
+            if (parts.size < 2 || (parts[0] != "GET" && parts[0] != "POST")) {
                 respond(output, 405, "text/plain", "Method Not Allowed")
                 return
             }
+            val method = parts[0]
             val headers = mutableMapOf<String, String>()
             while (true) {
                 val line = readLine(input) ?: break
@@ -112,15 +150,26 @@ class LanSyncServer(
             val query = parseQuery(parts[1].substringAfter('?', ""))
             val clientIp = c.inetAddress?.hostAddress ?: ""
 
-            when (path) {
-                "/info" -> handleInfo(output, headers)
-                "/pair" -> handlePair(output, headers, clientIp)
-                "/unpair" -> handleUnpair(output, headers)
-                "/unblocked" -> handleUnblocked(output, headers)
-                "/blocked" -> handleBlockedNotice(output, headers, clientIp)
-                "/clips" -> handleClips(output, headers, query, clientIp)
-                "/file" -> handleFile(output, headers, query, clientIp)
-                else -> respond(output, 404, "text/plain", "Not Found")
+            // 文件传输可能很大，body 读取期间放宽单次读超时（确认等待在读完 body 之后）
+            if (method == "POST" && (path == "/fs/send" || path == "/recv")) {
+                c.soTimeout = 60_000
+            }
+
+            when {
+                method == "POST" && path == "/fs/send" -> handleFsSend(input, output, headers)
+                method == "POST" && path == "/recv" ->
+                    handleFsRecv(input, output, headers, query)
+                method == "POST" -> respond(output, 404, "text/plain", "Not Found")
+                else -> when (path) {
+                    "/info" -> handleInfo(output, headers)
+                    "/pair" -> handlePair(output, headers, clientIp)
+                    "/unpair" -> handleUnpair(output, headers)
+                    "/unblocked" -> handleUnblocked(output, headers)
+                    "/blocked" -> handleBlockedNotice(output, headers, clientIp)
+                    "/clips" -> handleClips(output, headers, query, clientIp)
+                    "/file" -> handleFile(output, headers, query, clientIp)
+                    else -> respond(output, 404, "text/plain", "Not Found")
+                }
             }
         }
     }
@@ -146,9 +195,147 @@ class LanSyncServer(
             addProperty("name", settings.deviceName)
             addProperty("model", settings.deviceModel)
             addProperty("sharing", settings.sharing)
+            // 文件共享接收是否开启（手动输 IP 发送前的探测用）
+            addProperty("fs", if (fsHandler?.isEnabled() == true) 1 else 0)
             addProperty("version", PROTOCOL_VERSION)
         }
         respond(output, 200, "application/json", gson.toJson(json))
+    }
+
+    /**
+     * 文件共享接收：免配对、免 token，不经过 authorize/配对检查。
+     * 流程：读请求头 → body 流式落 cacheDir 临时文件 → 等待接收确认
+     * （自动接收直接通过，否则前台弹窗/后台通知，最多 30 秒）→
+     * 接收则落盘入库回 200，拒绝/超时回 409，未开启接收回 403。
+     */
+    private fun handleFsSend(
+        input: BufferedInputStream,
+        output: OutputStream,
+        headers: Map<String, String>
+    ) {
+        // 文件共享接收常驻；handler 为 null 只是 FileShareManager 尚未初始化的兜底
+        val handler = fsHandler
+        if (handler == null) {
+            respond(output, 403, "application/json", """{"error":"not_receiving"}""")
+            return
+        }
+        val contentLength = headers["content-length"]?.toLongOrNull()
+        if (contentLength == null || contentLength < 0) {
+            respond(output, 411, "application/json", """{"error":"length_required"}""")
+            return
+        }
+        val fileName = headers["x-file-name"]?.let { urlDecode(it) } ?: "接收文件"
+        val fromName = headers["x-device-name"]?.let { urlDecode(it) } ?: "未知设备"
+        val fromId = headers["x-device-id"]
+        val mime = headers["x-mime"]?.let { urlDecode(it) }
+
+        // 先把 body 完整落到临时文件，再询问用户是否接收（拒绝时不留垃圾）
+        val tmp = File(
+            context.cacheDir,
+            "fs_recv_${System.currentTimeMillis()}_${fsTmpSeq.incrementAndGet()}.tmp"
+        )
+        try {
+            tmp.outputStream().use { out -> copyExactly(input, out, contentLength) }
+            val accept = runCatching {
+                handler.awaitAccept(fileName, tmp.length(), mime, fromId, fromName)
+            }.getOrDefault(false)
+            if (!accept) {
+                Log.d(TAG, "文件共享接收被拒/超时：$fileName 来自 $fromName")
+                respond(output, 409, "application/json", """{"error":"rejected"}""")
+                return
+            }
+            val saved = handler.persist(fileName, mime, fromId, fromName, tmp)
+            if (saved == null) {
+                Log.w(TAG, "文件共享落盘失败：$fileName")
+                respond(output, 500, "application/json", """{"error":"store_failed"}""")
+            } else {
+                Log.d(TAG, "文件共享已接收：$fileName -> $saved")
+                respond(output, 200, "application/json", """{"ok":1}""")
+            }
+        } catch (e: EOFException) {
+            Log.w(TAG, "文件未传完连接就断了：$fileName")
+        } finally {
+            tmp.delete()
+        }
+    }
+
+    /**
+     * PC 端（copy-pc）文件发送接口：POST /recv?name=<URL编码>&size=<字节数>。
+     * 免配对免 token，复用文件共享的确认/落盘流程（FsReceiveHandler）；
+     * 响应格式与 PC 端保持一致。size 参数仅供参考，以 Content-Length 为准。
+     */
+    private fun handleFsRecv(
+        input: BufferedInputStream,
+        output: OutputStream,
+        headers: Map<String, String>,
+        query: Map<String, String>
+    ) {
+        // handler 为 null 只是 FileShareManager 尚未初始化的兜底
+        val handler = fsHandler
+        if (handler == null) {
+            respond(output, 500, "application/json", """{"error":"handler_not_ready"}""")
+            return
+        }
+        val contentLength = headers["content-length"]?.toLongOrNull()
+        if (contentLength == null || contentLength < 0) {
+            respond(output, 400, "application/json", """{"error":"bad_request"}""")
+            return
+        }
+        val fileName = query["name"]?.takeIf { it.isNotBlank() } ?: "接收文件"
+        val fromName = headers["x-device-name"]?.let { urlDecode(it) } ?: "未知设备"
+        val fromId = headers["x-device-id"]
+
+        // 先把 body 完整落到临时文件，再询问用户是否接收（拒绝时不留垃圾）
+        val tmp = File(
+            context.cacheDir,
+            "fs_recv_${System.currentTimeMillis()}_${fsTmpSeq.incrementAndGet()}.tmp"
+        )
+        try {
+            tmp.outputStream().use { out -> copyExactly(input, out, contentLength) }
+            // PC 协议无 mime 字段，按 null 处理
+            val start = System.currentTimeMillis()
+            val accept = runCatching {
+                handler.awaitAccept(fileName, tmp.length(), null, fromId, fromName)
+            }.getOrDefault(false)
+            if (!accept) {
+                // 区分用户主动拒绝与 30 秒确认超时（响应对齐 PC 协议格式）
+                val timeout = System.currentTimeMillis() - start >= 25_000
+                Log.d(TAG, "PC 文件接收被拒/超时：$fileName 来自 $fromName")
+                respond(
+                    output, if (timeout) 409 else 403, "application/json",
+                    if (timeout) """{"error":"confirm_timeout"}"""
+                    else """{"error":"rejected"}"""
+                )
+                return
+            }
+            val saved = handler.persist(fileName, null, fromId, fromName, tmp)
+            if (saved == null) {
+                Log.w(TAG, "PC 文件落盘失败：$fileName")
+                respond(output, 500, "application/json", """{"error":"store_failed"}""")
+            } else {
+                Log.d(TAG, "PC 文件已接收：$fileName -> $saved")
+                respond(
+                    output, 200, "application/json",
+                    """{"result":"ok","savedAs":${gson.toJson(fileName)}}"""
+                )
+            }
+        } catch (e: EOFException) {
+            Log.w(TAG, "文件未传完连接就断了：$fileName")
+        } finally {
+            tmp.delete()
+        }
+    }
+
+    /** 精确读取 len 字节到输出流；对端提前断开抛 EOFException */    private fun copyExactly(input: InputStream, out: OutputStream, len: Long) {
+        val buf = ByteArray(64 * 1024)
+        var remaining = len
+        while (remaining > 0) {
+            val n = input.read(buf, 0, minOf(buf.size.toLong(), remaining).toInt())
+            if (n < 0) throw EOFException("连接中断，文件未传完")
+            out.write(buf, 0, n)
+            remaining -= n
+        }
+        out.flush()
     }
 
     private fun handleClips(
@@ -481,7 +668,9 @@ class LanSyncServer(
 
     private fun reason(code: Int) = when (code) {
         200 -> "OK"; 401 -> "Unauthorized"; 403 -> "Forbidden"
-        404 -> "Not Found"; 405 -> "Method Not Allowed"; else -> "Error"
+        404 -> "Not Found"; 405 -> "Method Not Allowed"
+        409 -> "Conflict"; 411 -> "Length Required"
+        500 -> "Internal Server Error"; else -> "Error"
     }
 
     // ---------------- 工具 ----------------

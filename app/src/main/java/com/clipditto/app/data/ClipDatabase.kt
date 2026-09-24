@@ -5,10 +5,15 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [ClipItem::class], version = 2, exportSchema = false)
+@Database(
+    entities = [ClipItem::class, TransferRecord::class],
+    version = 3,
+    exportSchema = false
+)
 abstract class ClipDatabase : RoomDatabase() {
 
     abstract fun clipDao(): ClipDao
+    abstract fun transferDao(): TransferDao
 
     companion object {
         @Volatile
@@ -22,13 +27,31 @@ abstract class ClipDatabase : RoomDatabase() {
             }
         }
 
+        /** v2 → v3：新增文件共享的传送记录表 */
+        private val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS transfer_records (
+                        |id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        |fileName TEXT NOT NULL,
+                        |savedPath TEXT NOT NULL,
+                        |fileSize INTEGER NOT NULL,
+                        |mimeType TEXT,
+                        |fromDeviceId TEXT,
+                        |fromDeviceName TEXT,
+                        |timestamp INTEGER NOT NULL
+                        |)""".trimMargin()
+                )
+            }
+        }
+
         fun get(context: Context): ClipDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     ClipDatabase::class.java,
                     "clipditto.db"
-                ).addMigrations(MIGRATION_1_2).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { INSTANCE = it }
             }
     }
 }

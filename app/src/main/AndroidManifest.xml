@@ -18,6 +18,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- 通知（Android 13+） -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 应用内更新：调起安装器安装下载的 APK -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- 开机自启（可选） -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- 使用情况访问（来源识别备用通道；声明后才会出现在系统授权列表里） -->
@@ -63,6 +65,21 @@
         <!-- 局域网剪贴板同步：设备列表页 -->
         <activity
             android:name=".ui.DevicesActivity"
+            android:exported="false" />
+
+        <!-- 文件共享页 -->
+        <activity
+            android:name=".ui.FileShareActivity"
+            android:exported="false" />
+
+        <!-- 关于页（版本信息 + 检查更新） -->
+        <activity
+            android:name=".ui.AboutActivity"
+            android:exported="false" />
+
+        <!-- 文件接收请求通知的 接收/拒绝 按钮 -->
+        <receiver
+            android:name=".share.FileShareActionReceiver"
             android:exported="false" />
 
         <!-- 剪贴板监听 + 悬浮窗服务 -->

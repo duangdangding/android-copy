@@ -5,4 +5,9 @@
     <dimen name="scan_btn_padding_h">8dp</dimen>
     <dimen name="scan_btn_min_w">0dp</dimen>
     <dimen name="scan_btn_min_h">36dp</dimen>
+
+    <!-- 主页顶部按钮：手机上更紧凑 -->
+    <dimen name="main_btn_text_size">12sp</dimen>
+    <dimen name="main_btn_min_h">36dp</dimen>
+    <dimen name="main_btn_inset_v">0dp</dimen>
 </resources>
