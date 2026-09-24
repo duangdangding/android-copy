@@ -239,20 +239,29 @@ class FileShareActivity : AppCompatActivity() {
                 FileShareManager.resolvePending(p.id, false)
                 return@runOnUiThread
             }
+            val view = LayoutInflater.from(this).inflate(R.layout.dialog_fs_receive, null)
+            view.findViewById<TextView>(R.id.tvRecvAvatar).text =
+                p.fromDeviceName.firstOrNull()?.toString() ?: "?"
+            view.findViewById<TextView>(R.id.tvRecvFrom).text =
+                "来自「${p.fromDeviceName}」"
+            view.findViewById<TextView>(R.id.tvRecvFileIcon).text =
+                p.fileName.firstOrNull()?.toString() ?: "件"
+            view.findViewById<TextView>(R.id.tvRecvFileName).text = p.fileName
+            view.findViewById<TextView>(R.id.tvRecvFileSize).text =
+                FileShareManager.formatSize(p.fileSize)
+
             val dialog = AlertDialog.Builder(this)
-                .setTitle("文件接收请求")
-                .setMessage(
-                    "「${p.fromDeviceName}」想发送\n${p.fileName}" +
-                        "（${FileShareManager.formatSize(p.fileSize)}）\n\n是否接收？（30 秒未操作自动拒绝）"
-                )
+                .setView(view)
                 .setCancelable(false)
-                .setPositiveButton("接收") { _, _ ->
-                    FileShareManager.resolvePending(p.id, true)
-                }
-                .setNegativeButton("拒绝") { _, _ ->
-                    FileShareManager.resolvePending(p.id, false)
-                }
                 .create()
+            view.findViewById<View>(R.id.btnRecvAccept).setOnClickListener {
+                FileShareManager.resolvePending(p.id, true)
+                dialog.dismiss()
+            }
+            view.findViewById<View>(R.id.btnRecvReject).setOnClickListener {
+                FileShareManager.resolvePending(p.id, false)
+                dialog.dismiss()
+            }
             // 30 秒自动关闭：按拒收处理；弹窗被 dismiss 时（含这里）移除该任务
             val timeoutTask = Runnable {
                 FileShareManager.resolvePending(p.id, false)
@@ -339,20 +348,18 @@ class FileShareActivity : AppCompatActivity() {
 
     /** 逐个发送所选文件，期间显示进度弹窗，结束后弹出汇总结果 */
     private fun sendFiles(uris: List<Uri>, host: String, port: Int) {
-        val pad = (20 * resources.displayMetrics.density).toInt()
-        val tvProgress = TextView(this).apply { textSize = 14f }
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad / 2, pad, 0)
-            addView(
-                ProgressBar(this@FileShareActivity, null, android.R.attr.progressBarStyle)
-                    .apply { isIndeterminate = true }
-            )
-            addView(tvProgress)
+        val view = LayoutInflater.from(this).inflate(R.layout.dialog_fs_send, null)
+        val progressBar = view.findViewById<ProgressBar>(R.id.progressSend).apply {
+            max = uris.size
+            progress = 0
         }
+        val tvFile = view.findViewById<TextView>(R.id.tvSendFile)
+        val tvCount = view.findViewById<TextView>(R.id.tvSendCount)
+        view.findViewById<TextView>(R.id.tvSendTarget).text = "发送到 $host:$port"
+        tvCount.text = "0/${uris.size}"
+
         val dialog = AlertDialog.Builder(this)
-            .setTitle("发送文件到 $host:$port")
-            .setView(box)
+            .setView(view)
             .setCancelable(false)
             .create()
         dialog.show()
@@ -364,9 +371,12 @@ class FileShareActivity : AppCompatActivity() {
                 val meta = withContext(Dispatchers.IO) { resolveMeta(uri) }
                 if (meta == null) {
                     failures.add("（第 ${i + 1} 个文件无法读取信息）")
+                    progressBar.progress = i + 1
+                    tvCount.text = "${i + 1}/${uris.size}"
                     return@forEachIndexed
                 }
-                tvProgress.text = "正在发送 ${i + 1}/${uris.size}：${meta.name}"
+                tvFile.text = meta.name
+                tvCount.text = "${i + 1}/${uris.size}"
                 val err = withContext(Dispatchers.IO) {
                     runCatching {
                         client.send(host, port, meta.name, meta.mime, meta.size) {
@@ -377,6 +387,7 @@ class FileShareActivity : AppCompatActivity() {
                 }
                 if (err == null) ok++ else failures.add("${meta.name}：$err")
                 meta.tmpFile?.delete()
+                progressBar.progress = i + 1
             }
             dialog.dismiss()
             val msg = buildString {
