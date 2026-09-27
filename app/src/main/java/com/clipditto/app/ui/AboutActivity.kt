@@ -1,13 +1,9 @@
 package com.clipditto.app.ui
 
 import android.app.AlertDialog
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.Paint
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Button
@@ -25,12 +21,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 「关于」页：应用信息、版本更新检查（含下载安装全流程）、项目地址。
- * 更新流程（对话框 / 进度下载 / 安装权限引导）集中在本页，主页只做静默检查。
+ * 发现新版本不弹确认框、不展示更新日志，点按钮直接下载安装；
+ * 下载进度与安装权限引导仍在本页完成，主页只做静默检查。
  */
 class AboutActivity : AppCompatActivity() {
 
@@ -50,21 +46,9 @@ class AboutActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.tvVersion).text =
             "当前版本：${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
 
-        // 签名指纹：截断显示前 16 字节，长按复制完整值（用于比对两台设备/安装包签名是否一致）
-        findViewById<TextView>(R.id.tvSignature).apply {
-            val full = loadSignatureSha256()
-            text = "签名 SHA-256：" +
-                full.split(":").take(16).joinToString(":") + "…（长按复制）"
-            setOnLongClickListener {
-                val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-                cm.setPrimaryClip(ClipData.newPlainText("签名 SHA-256", full))
-                Toast.makeText(this@AboutActivity, "已复制完整签名指纹", Toast.LENGTH_SHORT).show()
-                true
-            }
-        }
-
+        // 已检查到新版本时按钮直接下载，否则先检查
         findViewById<Button>(R.id.btnCheckUpdate).setOnClickListener {
-            checkUpdate(manual = true)
+            latestInfo?.let { downloadUpdate(it) } ?: checkUpdate(manual = true)
         }
 
         bindLink(R.id.tvLinkPc, "https://github.com/duangdangding/pc-lscopy/releases")
@@ -96,32 +80,12 @@ class AboutActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * 本应用签名证书的 SHA-256（`AA:BB:…` 大写冒号分隔）。
-     * API 28+ 用 GET_SIGNING_CERTIFICATES，低版本回退 deprecated 的 GET_SIGNATURES。
-     */
-    @Suppress("DEPRECATION")
-    private fun loadSignatureSha256(): String {
-        return try {
-            val certBytes = if (Build.VERSION.SDK_INT >= 28) {
-                packageManager
-                    .getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
-                    .signingInfo?.apkContentsSigners?.firstOrNull()?.toByteArray()
-            } else {
-                packageManager
-                    .getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
-                    .signatures?.firstOrNull()?.toByteArray()
-            } ?: return "获取失败"
-            MessageDigest.getInstance("SHA-256").digest(certBytes)
-                .joinToString(":") { "%02X".format(it) }
-        } catch (e: Exception) {
-            "获取失败"
-        }
-    }
-
     // ---------------- 版本更新 ----------------
 
-    /** 检查更新并刷新「最新版本」行；有新版本时（manual 或按钮触发）弹更新对话框 */
+    /**
+     * 检查更新并刷新「最新版本」行。发现新版本时不弹确认框、不展示更新日志：
+     * 手动触发（点按钮）直接开始下载；进入页面的自动检查只更新文字与按钮状态。
+     */
     private fun checkUpdate(manual: Boolean) {
         findViewById<TextView>(R.id.tvLatest).text = "最新版本：检查中…"
         lifecycleScope.launch {
@@ -138,31 +102,20 @@ class AboutActivity : AppCompatActivity() {
                 UpdateChecker.isNewer(info.tag, BuildConfig.VERSION_NAME) -> {
                     latestInfo = info
                     tv.text = "最新版本：${info.tag}（有新版本）"
-                    showUpdateDialog(info)
+                    findViewById<Button>(R.id.btnCheckUpdate).text = "立即更新"
+                    // 手动触发不二次确认，直接下载
+                    if (manual) downloadUpdate(info)
                 }
                 else -> {
                     latestInfo = null
                     tv.text = "最新版本：${info.tag}（已是最新）"
+                    findViewById<Button>(R.id.btnCheckUpdate).text = "检查更新"
                     if (manual) Toast.makeText(
                         this@AboutActivity, "当前已是最新版本", Toast.LENGTH_SHORT
                     ).show()
                 }
             }
         }
-    }
-
-    /** 更新对话框：标题带新版本号，内容显示更新日志（超长截取前 500 字）+ 当前版本 */
-    private fun showUpdateDialog(info: UpdateChecker.ReleaseInfo) {
-        val log = info.body.trim().let { if (it.length > 500) it.take(500) + "…" else it }
-        AlertDialog.Builder(this)
-            .setTitle("发现新版本 ${info.tag}")
-            .setMessage(
-                "当前版本：${BuildConfig.VERSION_NAME}\n\n" +
-                    if (log.isBlank()) "（无更新日志）" else log
-            )
-            .setPositiveButton("立即更新") { _, _ -> downloadUpdate(info) }
-            .setNegativeButton("暂不更新", null)
-            .show()
     }
 
     /** 带进度下载更新包，完成后调起安装；「取消」中断下载线程 */

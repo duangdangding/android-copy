@@ -570,8 +570,8 @@ class MainActivity : AppCompatActivity() {
     // ---------------- 版本更新 ----------------
 
     /**
-     * 静默检查更新：只在发现新版本时弹窗提示；「立即更新」跳到「关于」页处理
-     * 下载与安装（下载/安装流程集中在 AboutActivity，主页不持有）。
+     * 静默检查更新：发现新版本时只弹一条轻提示（不弹对话框、不展示更新日志），
+     * 下载与安装流程集中在 AboutActivity，主页不持有。
      */
     private fun checkUpdateSilently() {
         lifecycleScope.launch {
@@ -582,18 +582,11 @@ class MainActivity : AppCompatActivity() {
             if (info == null ||
                 !UpdateChecker.isNewer(info.tag, BuildConfig.VERSION_NAME)
             ) return@launch
-            val log = info.body.trim().let { if (it.length > 500) it.take(500) + "…" else it }
-            AlertDialog.Builder(this@MainActivity)
-                .setTitle("发现新版本 ${info.tag}")
-                .setMessage(
-                    "当前版本：${BuildConfig.VERSION_NAME}\n\n" +
-                        if (log.isBlank()) "（无更新日志）" else log
-                )
-                .setPositiveButton("立即更新") { _, _ ->
-                    startActivity(Intent(this@MainActivity, AboutActivity::class.java))
-                }
-                .setNegativeButton("暂不更新", null)
-                .show()
+            Toast.makeText(
+                this@MainActivity,
+                "发现新版本 ${info.tag}，可到「关于」页更新",
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 
