@@ -19,7 +19,13 @@ data class LanDevice(
     /** 当前是否在线（本次扫描是否发现） */
     var online: Boolean = false,
     /** 本机从该设备同步内容的最新时间戳 */
-    var lastSync: Long = 0L
+    var lastSync: Long = 0L,
+    /**
+     * 云端中继通道在线（展示用，合并设备卡时设置；@Transient 不进配对持久化）。
+     * 与 online 叠加出三种状态：仅局域网（不标注）/ 局域网+云端 / 仅云端。
+     */
+    @Transient
+    var viaRelay: Boolean = false
 ) {
     val displayName: String get() = if (name.isBlank()) "未知设备" else name
 }

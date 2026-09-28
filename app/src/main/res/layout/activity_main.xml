@@ -86,39 +86,18 @@
                 android:text="Shizuku 免打扰读取：检测中…"
                 android:textSize="@dimen/main_btn_text_size" />
 
-            <LinearLayout
+            <Button
+                android:id="@+id/btnLanSync"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="2dp">
-
-                <Button
-                    android:id="@+id/btnLanSync"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="4dp"
-                    android:insetTop="@dimen/main_btn_inset_v"
-                    android:insetBottom="@dimen/main_btn_inset_v"
-                    android:minHeight="@dimen/main_btn_min_h"
-                    android:singleLine="true"
-                    android:text="局域网同步"
-                    android:textSize="@dimen/main_btn_text_size" />
-
-                <Button
-                    android:id="@+id/btnFileShare"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="4dp"
-                    android:insetTop="@dimen/main_btn_inset_v"
-                    android:insetBottom="@dimen/main_btn_inset_v"
-                    android:minHeight="@dimen/main_btn_min_h"
-                    android:singleLine="true"
-                    android:text="文件共享"
-                    android:textSize="@dimen/main_btn_text_size" />
-            </LinearLayout>
+                android:layout_marginHorizontal="8dp"
+                android:layout_marginVertical="2dp"
+                android:insetTop="@dimen/main_btn_inset_v"
+                android:insetBottom="@dimen/main_btn_inset_v"
+                android:minHeight="@dimen/main_btn_min_h"
+                android:singleLine="true"
+                android:text="设备同步"
+                android:textSize="@dimen/main_btn_text_size" />
 
             <LinearLayout
                 android:layout_width="match_parent"

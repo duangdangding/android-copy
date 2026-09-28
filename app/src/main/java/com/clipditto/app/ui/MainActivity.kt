@@ -128,9 +128,6 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnLanSync).setOnClickListener {
             startActivity(Intent(this, DevicesActivity::class.java))
         }
-        findViewById<Button>(R.id.btnFileShare).setOnClickListener {
-            startActivity(Intent(this, FileShareActivity::class.java))
-        }
         findViewById<Button>(R.id.btnAbout).setOnClickListener {
             startActivity(Intent(this, AboutActivity::class.java))
         }

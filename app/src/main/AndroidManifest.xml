@@ -67,6 +67,11 @@
             android:name=".ui.DevicesActivity"
             android:exported="false" />
 
+        <!-- 同步设置页：局域网开关与接收配置 + 云端中继入口 -->
+        <activity
+            android:name=".ui.LanSyncSettingsActivity"
+            android:exported="false" />
+
         <!-- 云端中继同步：设置页 -->
         <activity
             android:name=".ui.RelaySettingsActivity"

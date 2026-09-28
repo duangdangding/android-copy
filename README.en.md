@@ -68,7 +68,8 @@ app/src/main/java/com/clipditto/app/
 ├── backup/BackupManager.kt       # Zip backup / import
 ├── ui/
 │   ├── MainActivity.kt           # History list, search, time-range deletion, backup, permission guide
-│   ├── DevicesActivity.kt        # LAN devices and sync settings
+│   ├── DevicesActivity.kt        # Device sync page (LAN + cloud device list, pairing, batch ops)
+│   ├── LanSyncSettingsActivity.kt # Sync settings page (LAN switches/options + cloud relay entry)
 │   ├── RelaySettingsActivity.kt  # Cloud relay settings (server/group/encryption/status)
 │   ├── FileShareActivity.kt      # File sharing send/receive
 │   ├── AboutActivity.kt          # About page and in-app update

@@ -68,7 +68,8 @@ app/src/main/java/com/clipditto/app/
 ├── backup/BackupManager.kt       # zip 备份 / 导入
 ├── ui/
 │   ├── MainActivity.kt           # 历史列表、搜索、时间段删除、备份导入、权限引导
-│   ├── DevicesActivity.kt        # 局域网设备与同步设置
+│   ├── DevicesActivity.kt        # 设备同步页（局域网 + 云端设备列表、配对、批量操作）
+│   ├── LanSyncSettingsActivity.kt # 同步设置页（局域网开关与接收配置 + 云端中继入口）
 │   ├── RelaySettingsActivity.kt  # 云端中继设置（服务器/分组/加密/连接状态）
 │   ├── FileShareActivity.kt      # 文件共享收发
 │   ├── AboutActivity.kt          # 关于页与应用内更新

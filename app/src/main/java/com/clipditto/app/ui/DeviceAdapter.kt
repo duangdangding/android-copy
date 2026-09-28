@@ -42,20 +42,28 @@ class DeviceAdapter(
 
     override fun onBindViewHolder(holder: VH, position: Int) {
         val d = items[position]
+        // 云端中继在线也视为在线（绿点）；仅云端可达的卡不显示局域网专有信息
+        val relayOnly = d.viaRelay && !d.online
+        val effectiveOnline = d.online || d.viaRelay
         holder.avatar.text = d.displayName.firstOrNull()?.toString() ?: "?"
         holder.name.text =
             if (d.model.isNullOrBlank()) d.displayName else "${d.displayName}（${d.model}）"
         holder.dot.setBackgroundResource(
-            if (d.online) R.drawable.bg_status_dot_online else R.drawable.bg_status_dot_offline
+            if (effectiveOnline) R.drawable.bg_status_dot_online else R.drawable.bg_status_dot_offline
         )
         holder.status.setTextColor(
-            if (d.online) 0xFF2E7D32.toInt() else 0xFF999999.toInt()
+            if (effectiveOnline) 0xFF2E7D32.toInt() else 0xFF999999.toInt()
         )
         holder.status.text = buildString {
-            append(if (d.online) "在线" else "离线")
+            append(if (effectiveOnline) "在线" else "离线")
+            // 通道徽标（LAN 优先语义：纯局域网不标注）
+            if (d.online && d.viaRelay) append(" · 局域网+云端")
+            else if (d.viaRelay) append(" · 云端")
             d.host?.takeIf { d.online }?.let { append(" · $it") }
-            append(if (d.sharing) " · 共享中" else " · 未共享")
-            append(if (d.paired) " · 已配对" else " · 未配对")
+            if (!relayOnly || d.paired) {
+                append(if (d.sharing) " · 共享中" else " · 未共享")
+                append(if (d.paired) " · 已配对" else " · 未配对")
+            }
         }
         val syncText = when {
             d.lastSync > 0 -> "上次同步：${fmt.format(Date(d.lastSync))}"

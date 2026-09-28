@@ -79,7 +79,8 @@ app/src/main/java/com/clipditto/app/sync/relay/
 | `ClipboardService.kt` | 本地新条目回调处追加一行投递 | 除现有 LAN 逻辑外，同时 `RelaySyncManager.enqueueLocal(item)`；**仅此一处接入，其余不动** |
 | `LanSyncManager.kt` | 抽出入库共用方法 | `importClip` 的文字入库分支抽为 internal 方法供 Relay 复用（或 RelaySyncManager 直接组合 `repo.findDuplicateText` / `touch` / `insertRemote`，二选一，实现时定） |
 | `ui/RelaySettingsActivity.kt` + `res/layout/activity_relay_settings.xml` | 新增「云端中继」设置页 | 见 §7 |
-| `ui/DevicesActivity.kt` | 入口 + 状态展示 | 设备页加「云端中继」入口卡片；后续迭代再考虑设备卡合并显示（§9） |
+| `ui/DevicesActivity.kt` | 设备卡合并展示 | 云端设备并入设备列表（§9）；设置入口移至 `LanSyncSettingsActivity` |
+| `ui/LanSyncSettingsActivity.kt`（新增） | 同步设置页 | 局域网同步全部开关/配置 + 「云端中继」入口（实时状态） |
 | `AndroidManifest.xml` | 注册新 Activity | 无需新权限（INTERNET 已有） |
 
 ## 5. 协议实现（对齐 PC 端 §4.3 / §4.5）
@@ -148,7 +149,8 @@ app/src/main/java/com/clipditto/app/sync/relay/
 
 ### 7.1 入口与布局
 
-- 入口：`DevicesActivity`（设备页）顶部新增一张「云端中继」卡片，显示连接状态摘要
+- 入口：「设备同步」页（DevicesActivity）右上角「设置」→ 同步设置页
+  （LanSyncSettingsActivity）里的「云端中继」条目，实时显示连接状态摘要
   （未启用 / 已连接 / 连接中 / 鉴权失败），点击进 `RelaySettingsActivity`。
 - 布局 `activity_relay_settings.xml`：沿用现有设置页风格（Material 开关 + 输入框 +
   状态文本），分区如下：
@@ -243,14 +245,20 @@ SharedPreferences 文件 `relay_sync`，与 `lan_sync` 互不干扰：
 同一条目 LAN 先到（几十 ms）、Relay 后到（几百 ms）或反向，均按内容查重，
 晚到的 touch 时间戳，用户无感知（PC 端 §7.1 场景的手机侧镜像）。
 
-## 9. 与 PC 端设备卡合并的关系
+## 9. 设备卡合并展示（已实现）
 
-PC 端 M5 已实现「同一 device_id 双通道合并为一张卡」。安卓端**首期不做**设备卡合并
-（安卓端 LAN 设备列表是「我拉别人的内容」的拉取模型，与 PC 端推送模型不同）：
+与 PC 端 M5 同一合并语义：两通道设备身份是同一个 `LanSettings.deviceId`，它就是合并键。
 
-- 首期：云端在线设备只显示在「云端中继」设置页的设备列表里（§7.1），不混进 LAN 设备页列表。
-- 后续迭代：若需要在设备页合并展示（比如云端设备也能触发某些操作），再单独设计，
-  依赖后端并无改动（设备身份本来就是同一个 `deviceId`）。
+- `LanDevice` 新增 `@Transient var viaRelay`（展示用，不进配对持久化）；
+  `DevicesActivity.mergedDevices()` 把 `RelaySyncManager.peers` 并入 LAN 设备列表：
+  同一 `deviceId` 合并为一张卡，局域网看不到但中继在线的设备追加一张「云端」卡。
+- 徽标（LAN 优先语义，与 PC 端一致）：双通道显示「局域网+云端」，仅云端显示「云端」，
+  纯局域网不标注；云端在线即视为在线（绿点）。
+- **仅云端可达的设备不提供局域网操作**：未配对的纯云端卡点击只弹说明 +
+  「删除该设备同步来的记录」；批量同步自动跳过仅云端设备并 Toast 提示
+  （中继是实时推送，无需也无法手动拉取）。已配对但暂时仅云端可达的设备，
+  本地管理操作（删记录 / 移除设备）仍可用。
+- **发送不受显示影响**：维持双通道双发，徽标只是展示，不引入按显示通道单发的状态机。
 
 ## 10. 实施步骤
 
