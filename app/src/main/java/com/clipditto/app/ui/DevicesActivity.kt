@@ -106,6 +106,15 @@ class DevicesActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.tvSyncMaxSize).setOnClickListener { showSyncMaxSizeDialog() }
         findViewById<TextView>(R.id.tvSyncTypes).setOnClickListener { showSyncTypesDialog() }
         findViewById<TextView>(R.id.tvSyncInterval).setOnClickListener { showSyncIntervalDialog() }
+        // 云端中继入口：点击进设置页，文字实时显示连接状态
+        findViewById<TextView>(R.id.tvRelay).setOnClickListener {
+            startActivity(Intent(this, RelaySettingsActivity::class.java))
+        }
+        lifecycleScope.launch {
+            com.clipditto.app.sync.relay.RelaySyncManager.status.collectLatest { s ->
+                findViewById<TextView>(R.id.tvRelay).text = "云端中继：$s（点击设置）"
+            }
+        }
         refreshSyncSettingsUi()
 
         findViewById<Button>(R.id.btnAddIp).setOnClickListener { showAddIpDialog() }

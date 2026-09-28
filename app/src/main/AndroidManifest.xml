@@ -67,6 +67,11 @@
             android:name=".ui.DevicesActivity"
             android:exported="false" />
 
+        <!-- 云端中继同步：设置页 -->
+        <activity
+            android:name=".ui.RelaySettingsActivity"
+            android:exported="false" />
+
         <!-- 文件共享页 -->
         <activity
             android:name=".ui.FileShareActivity"

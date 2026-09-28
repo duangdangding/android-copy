@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 云端中继设置页：开关 + 服务器/分组配置 + 连接状态，整体可滚动 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="@color/purple_500"
+        android:navigationIcon="@android:drawable/ic_menu_revert"
+        android:title="云端中继"
+        android:titleTextColor="@color/white" />
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="24dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="启用云端中继同步"
+                    android:textSize="15sp" />
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/swEnabled"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingVertical="4dp"
+                android:text="开启后本机剪贴板同时走局域网和中继服务器两条通道同步，离开局域网（如切蜂窝网络）也能与电脑互相同步。"
+                android:textColor="#888888"
+                android:textSize="12sp" />
+
+            <!-- ── 服务器 ── -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="12dp"
+                android:text="服务器"
+                android:textColor="#666666"
+                android:textSize="13sp" />
+
+            <EditText
+                android:id="@+id/etServerUrl"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="服务器地址（如 wss://example.com:8780）"
+                android:imeOptions="actionNext"
+                android:inputType="textUri"
+                android:textSize="14sp" />
+
+            <EditText
+                android:id="@+id/etAccessKey"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="接入密钥（服务器的 RELAY_ACCESS_KEYS 之一）"
+                android:imeOptions="actionNext"
+                android:inputType="textPassword"
+                android:textSize="14sp" />
+
+            <!-- ── 分组 ── -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="12dp"
+                android:text="分组"
+                android:textColor="#666666"
+                android:textSize="13sp" />
+
+            <EditText
+                android:id="@+id/etGroupId"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="分组 ID（同组设备互相同步）"
+                android:imeOptions="actionNext"
+                android:inputType="text"
+                android:textSize="14sp" />
+
+            <EditText
+                android:id="@+id/etGroupKey"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="分组密钥（可选，端到端加密）"
+                android:imeOptions="actionDone"
+                android:inputType="textPassword"
+                android:textSize="14sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingVertical="4dp"
+                android:text="分组密钥只存在各设备本地，同组设备须填相同密钥；填写后服务器只能看到密文。留空为明文模式。"
+                android:textColor="#888888"
+                android:textSize="12sp" />
+
+            <!-- ── 选项 ── -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="12dp"
+                android:text="选项"
+                android:textColor="#666666"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="图片也走云端中继（≤4MB，更耗流量）"
+                    android:textSize="15sp" />
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/swSyncImage"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingVertical="4dp"
+                android:text="关闭时仅文字走中继，图片/文件仅局域网同步。"
+                android:textColor="#888888"
+                android:textSize="12sp" />
+
+            <!-- ── 状态 ── -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="12dp"
+                android:background="#E0E0E0" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="12dp"
+                android:text="状态"
+                android:textColor="#666666"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tvStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingVertical="6dp"
+                android:text="连接状态：未启用"
+                android:textColor="#7B1FA2"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/tvPeers"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingVertical="4dp"
+                android:text="同组在线设备：无"
+                android:textColor="#333333"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tvLastSeq"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingVertical="4dp"
+                android:text="同步游标：seq 0"
+                android:textColor="#888888"
+                android:textSize="12sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingTop="8dp">
+
+                <Button
+                    android:id="@+id/btnReconnect"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="重新连接"
+                    android:textSize="13sp" />
+
+                <Button
+                    android:id="@+id/btnResetCursor"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="清除游标并全量补拉"
+                    android:textSize="13sp" />
+            </LinearLayout>
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+</LinearLayout>

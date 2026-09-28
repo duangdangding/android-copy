@@ -1,6 +1,6 @@
 # ClipDitto (共享剪贴-卢)
 
-An Android local clipboard history tool inspired by Ditto on Windows: floating bubble + automatic clipboard recording + one-tap paste via accessibility + LAN multi-device sync + LAN file sharing.
+An Android local clipboard history tool inspired by Ditto on Windows: floating bubble + automatic clipboard recording + one-tap paste via accessibility + LAN / cloud-relay multi-device sync + LAN file sharing.
 
 Companion PC project: [pc-lscopy (copy-pc)](https://github.com/duangdangding/pc-lscopy) — syncs clips and exchanges files with this app.
 
@@ -14,8 +14,9 @@ Companion PC project: [pc-lscopy (copy-pc)](https://github.com/duangdangding/pc-
 6. **Time-range deletion**: last hour / today / last 7 days / last 30 days / custom date range / clear all, with media files cleaned up together; a second confirmation is shown when favorites are included.
 7. **Backup & restore**: export to a zip (`clips.json` + media files); importing merges entries and restores media without overwriting existing data.
 8. **LAN multi-device sync**: pair devices with a pairing code and sync clipboard history between them; manual sync with selectable range (latest N / a given day / all) or automatic incremental sync (every 30 s by default). Configurable content types (text/image/media/other), size cap (20 MB default), storage directory (`Download/ClipDitto` by default) and encrypted transfer (ECDH ephemeral keys + AES/GCM, off by default). Offline devices can be removed manually; synced entries from a specific device can be deleted separately.
-9. **File sharing**: send any files to devices on the LAN without pairing — independent from clipboard sync. Online devices are discovered automatically (including the PC copy-pc client), or enter an IP manually; incoming files can be confirmed per-transfer or auto-accepted; transfer history supports search, opening files and batch deletion.
-10. **In-app updates**: the About page shows the current version and can check GitHub Releases for new versions. No confirmation dialog and no changelog — tap "立即更新" to download directly (with progress, cancellable); after the SHA-256 check passes, the system installer is launched. The main screen only shows a lightweight toast when a new version is found.
+9. **Cloud relay sync**: a self-hosted relay server (WebSocket over TLS long connection) acts as a second sync channel alongside LAN — both channels run independently, so syncing with the PC keeps working off-LAN (e.g. on cellular). Challenge-response HMAC authentication (keys never transmitted), offline entries are queued server-side and pulled by cursor after reconnect; an optional group key enables end-to-end encryption (HKDF + AES-256-GCM, the server only sees ciphertext). Images stay LAN-only by default, with an opt-in toggle (≤4 MB). See `docs/android-relay-sync-design.md` (Chinese).
+10. **File sharing**: send any files to devices on the LAN without pairing — independent from clipboard sync. Online devices are discovered automatically (including the PC copy-pc client), or enter an IP manually; incoming files can be confirmed per-transfer or auto-accepted; transfer history supports search, opening files and batch deletion.
+11. **In-app updates**: the About page shows the current version and can check GitHub Releases for new versions. No confirmation dialog and no changelog — tap "立即更新" to download directly (with progress, cancellable); after the SHA-256 check passes, the system installer is launched. The main screen only shows a lightweight toast when a new version is found.
 
 ## Build
 
@@ -62,11 +63,13 @@ app/src/main/java/com/clipditto/app/
 │   ├── ClipboardShellService.kt  # Shizuku user service (shell privileges)
 │   └── BootReceiver.kt           # Boot auto-start
 ├── sync/                         # LAN sync: discovery / server / client / crypto / settings
+│   └── relay/                    # Cloud relay sync: WSS connection / E2E crypto / manager
 ├── share/                        # File sharing: discovery / transfer / storage (independent)
 ├── backup/BackupManager.kt       # Zip backup / import
 ├── ui/
 │   ├── MainActivity.kt           # History list, search, time-range deletion, backup, permission guide
 │   ├── DevicesActivity.kt        # LAN devices and sync settings
+│   ├── RelaySettingsActivity.kt  # Cloud relay settings (server/group/encryption/status)
 │   ├── FileShareActivity.kt      # File sharing send/receive
 │   ├── AboutActivity.kt          # About page and in-app update
 │   └── HistoryAdapter.kt         # Shared list adapter for main UI and floating panel

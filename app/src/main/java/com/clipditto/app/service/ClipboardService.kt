@@ -41,6 +41,7 @@ import com.clipditto.app.R
 import com.clipditto.app.data.ClipItem
 import com.clipditto.app.data.ClipRepository
 import com.clipditto.app.data.ClipType
+import com.clipditto.app.sync.relay.RelaySyncManager
 import com.clipditto.app.ui.HistoryAdapter
 import com.clipditto.app.ui.ItemActionButtons
 import com.clipditto.app.ui.MainActivity
@@ -457,15 +458,16 @@ class ClipboardService : Service() {
             repo.touch(dup.id)
             return
         }
-        val id = repo.insert(
-            ClipItem(
-                type = ClipType.TEXT,
-                text = trimmed,
-                mimeType = ClipDescription.MIMETYPE_TEXT_PLAIN,
-                sourceApp = sourceApp
-            )
+        val newItem = ClipItem(
+            type = ClipType.TEXT,
+            text = trimmed,
+            mimeType = ClipDescription.MIMETYPE_TEXT_PLAIN,
+            sourceApp = sourceApp
         )
+        val id = repo.insert(newItem)
         Log.d(TAG, "文字入库成功 id=$id")
+        // 云端中继：本机新条目双通道外发（未启用/未连接时内部直接丢弃）
+        RelaySyncManager.onLocalText(newItem.copy(id = id))
     }
 
     private suspend fun saveUriClip(uri: Uri, desc: ClipDescription?, sourceApp: String?) {
@@ -492,16 +494,19 @@ class ClipboardService : Service() {
             repo.touch(dup.id)
             return
         }
-        val id = repo.insert(
-            ClipItem(
-                type = type,
-                text = uri.lastPathSegment ?: file.name,
-                filePath = file.absolutePath,
-                mimeType = mime,
-                sourceApp = sourceApp
-            )
+        val newItem = ClipItem(
+            type = type,
+            text = uri.lastPathSegment ?: file.name,
+            filePath = file.absolutePath,
+            mimeType = mime,
+            sourceApp = sourceApp
         )
+        val id = repo.insert(newItem)
         Log.d(TAG, "媒体入库成功 id=$id type=$type")
+        // 云端中继：图片可选经中继同步（开关 + ≤4MB 限制在内部判断）
+        if (type == ClipType.IMAGE) {
+            RelaySyncManager.onLocalImage(newItem.copy(id = id), file)
+        }
     }
 
     // ---------------- 悬浮球 ----------------

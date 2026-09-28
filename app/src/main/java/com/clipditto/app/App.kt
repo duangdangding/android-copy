@@ -15,6 +15,8 @@ class App : Application() {
         runCatching { com.clipditto.app.service.ShizukuClipboard.init() }
         // 局域网同步：按开关状态恢复服务/发现
         runCatching { LanSyncManager.init(this) }
+        // 云端中继同步：按开关状态恢复连接
+        runCatching { com.clipditto.app.sync.relay.RelaySyncManager.init(this) }
         // 文件共享：按开关状态恢复接收服务/在线广播
         runCatching { com.clipditto.app.share.FileShareManager.init(this) }
     }
