@@ -87,6 +87,11 @@
             android:name=".ui.AboutActivity"
             android:exported="false" />
 
+        <!-- 设置页（悬浮球 / 面板 / 主题 / 记录规则 / 存储位置） -->
+        <activity
+            android:name=".ui.SettingsActivity"
+            android:exported="false" />
+
         <!-- 文件接收请求通知的 接收/拒绝 按钮 -->
         <receiver
             android:name=".share.FileShareActionReceiver"

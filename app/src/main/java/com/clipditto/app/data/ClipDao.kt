@@ -67,6 +67,10 @@ interface ClipDao {
     @Query("SELECT * FROM clips WHERE favorite = 0 ORDER BY timestamp ASC LIMIT :count")
     suspend fun oldestNonFavorite(count: Int): List<ClipItem>
 
+    /** 早于指定时间的全部非收藏记录（用于按保留天数清理） */
+    @Query("SELECT * FROM clips WHERE favorite = 0 AND timestamp < :cutoff ORDER BY timestamp ASC")
+    suspend fun expiredNonFavorite(cutoff: Long): List<ClipItem>
+
     /** 局域网同步：比指定时间新的记录（增量拉取用） */
     @Query("SELECT * FROM clips WHERE timestamp > :since ORDER BY timestamp ASC")
     suspend fun getSince(since: Long): List<ClipItem>

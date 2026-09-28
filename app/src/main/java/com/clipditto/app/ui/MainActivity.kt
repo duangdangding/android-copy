@@ -36,6 +36,7 @@ import com.clipditto.app.service.ClipboardService
 import com.clipditto.app.service.PasteAccessibilityService
 import com.clipditto.app.service.ShizukuClipboard
 import com.clipditto.app.util.FuzzySearch
+import com.clipditto.app.util.AppSettings
 import com.clipditto.app.util.StorageStats
 import com.clipditto.app.util.UpdateChecker
 import kotlinx.coroutines.flow.collectLatest
@@ -58,7 +59,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var repo: ClipRepository
     private lateinit var adapter: HistoryAdapter
     private lateinit var tvEmpty: TextView
-    private lateinit var btnToggle: Button
+    private lateinit var btnListen: Button
+    private lateinit var btnBall: Button
 
     private var allClips: List<ClipItem> = emptyList()
     private var query: String = ""
@@ -90,7 +92,8 @@ class MainActivity : AppCompatActivity() {
 
         repo = ClipRepository(this)
         tvEmpty = findViewById(R.id.tvEmpty)
-        btnToggle = findViewById(R.id.btnToggleService)
+        btnListen = findViewById(R.id.btnToggleListen)
+        btnBall = findViewById(R.id.btnToggleBall)
 
         adapter = HistoryAdapter(
             onClick = { item -> copyToSystem(item) },
@@ -115,18 +118,19 @@ class MainActivity : AppCompatActivity() {
             applyFilter()
         }
 
-        btnToggle.setOnClickListener { toggleService() }
+        btnListen.setOnClickListener { toggleListen() }
+        btnBall.setOnClickListener { toggleBall() }
         // 无障碍开启入口已合并到顶部状态栏（tvStatus 点我开启）
         findViewById<Button>(R.id.btnDeleteRange).setOnClickListener { showDeleteRangeDialog() }
-        findViewById<Button>(R.id.btnBackup).setOnClickListener {
-            backupLauncher.launch("clipditto_backup_${System.currentTimeMillis()}.zip")
-        }
+        findViewById<Button>(R.id.btnBackup).setOnClickListener { onBackupClick() }
         findViewById<Button>(R.id.btnImport).setOnClickListener {
             importLauncher.launch(arrayOf("application/zip", "application/octet-stream"))
         }
-        findViewById<Button>(R.id.btnMaxRecords).setOnClickListener { showMaxRecordsDialog() }
         findViewById<Button>(R.id.btnLanSync).setOnClickListener {
             startActivity(Intent(this, DevicesActivity::class.java))
+        }
+        findViewById<Button>(R.id.btnSettings).setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
         }
         findViewById<Button>(R.id.btnAbout).setOnClickListener {
             startActivity(Intent(this, AboutActivity::class.java))
@@ -198,20 +202,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // 主界面打开时收起悬浮列表面板，避免它盖在主界面上层
+        // 主界面打开时收起悬浮列表面板（默认关闭弹窗列表），悬浮球保持显示
         ClipboardService.instance?.dismissPanel()
-        refreshToggleButton()
+        refreshListenButton()
+        refreshBallButton()
         refreshStatus()
         refreshStorage()
-        refreshMaxRecordsBtn()
         refreshShizukuButton()
-    }
-
-    /** 按钮上直接显示当前上限设置 */
-    private fun refreshMaxRecordsBtn() {
-        val max = repo.getMaxRecords()
-        findViewById<Button>(R.id.btnMaxRecords).text =
-            "记录数量上限：${if (max == 0) "无限制" else "$max 条"}"
     }
 
     /** 显示应用 / 数据库占用情况 */
@@ -256,38 +253,28 @@ class MainActivity : AppCompatActivity() {
         return events.hasNextEvent()
     }
 
-    // ---------------- 服务开关 ----------------
+    // ---------------- 服务开关（监听与悬浮球相互独立） ----------------
 
-    private fun refreshToggleButton() {
-        btnToggle.text = if (ClipboardService.isRunning) "关闭监听+悬浮球" else "开启监听+悬浮球"
+    private fun refreshListenButton() {
+        btnListen.text = if (ClipboardService.isRunning) "关闭监听" else "开启监听"
     }
 
-    private fun toggleService() {
+    private fun refreshBallButton() {
+        btnBall.text = "悬浮球：${if (AppSettings.isBallEnabled(this)) "开" else "关"}"
+    }
+
+    /** 监听开关：只启动/停止剪贴板监听服务；悬浮球是否显示由悬浮球开关决定 */
+    private fun toggleListen() {
         if (ClipboardService.isRunning) {
             ClipboardService.stop(this)
             saveServiceEnabled(false)
-            refreshToggleButton()
+            refreshListenButton()
             return
         }
-        if (!Settings.canDrawOverlays(this)) {
-            AlertDialog.Builder(this)
-                .setTitle("需要悬浮窗权限")
-                .setMessage("悬浮球和剪贴板面板需要「显示在其他应用上层」权限，是否前往开启？")
-                .setPositiveButton("去开启") { _, _ ->
-                    startActivity(
-                        Intent(
-                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            Uri.parse("package:$packageName")
-                        )
-                    )
-                }
-                .setNegativeButton("取消", null)
-                .show()
-            return
-        }
+        if (!ensureOverlayPermission()) return
         ClipboardService.start(this)
         saveServiceEnabled(true)
-        refreshToggleButton()
+        refreshListenButton()
         if (!PasteAccessibilityService.isEnabled) {
             Toast.makeText(
                 this,
@@ -295,6 +282,42 @@ class MainActivity : AppCompatActivity() {
                 Toast.LENGTH_LONG
             ).show()
         }
+    }
+
+    /** 悬浮球开关：只控制悬浮球显示/隐藏，后台监听不受影响 */
+    private fun toggleBall() {
+        val now = !AppSettings.isBallEnabled(this)
+        if (now && !ensureOverlayPermission()) return
+        ClipboardService.setBallVisible(this, now)
+        refreshBallButton()
+        Toast.makeText(
+            this,
+            when {
+                !now -> "悬浮球已关闭，后台监听不受影响"
+                ClipboardService.isRunning -> "悬浮球已开启"
+                else -> "悬浮球已开启，将在启动监听后显示"
+            },
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    /** 检查悬浮窗权限，未授权时弹引导；已授权返回 true */
+    private fun ensureOverlayPermission(): Boolean {
+        if (Settings.canDrawOverlays(this)) return true
+        AlertDialog.Builder(this)
+            .setTitle("需要悬浮窗权限")
+            .setMessage("悬浮球和剪贴板面板需要「显示在其他应用上层」权限，是否前往开启？")
+            .setPositiveButton("去开启") { _, _ ->
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
+                )
+            }
+            .setNegativeButton("取消", null)
+            .show()
+        return false
     }
 
     private fun saveServiceEnabled(enabled: Boolean) {
@@ -328,7 +351,7 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "请通过悬浮球面板复制媒体内容", Toast.LENGTH_SHORT).show()
                 return
             }
-            Toast.makeText(this, "请先开启悬浮球服务", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "请先开启监听服务", Toast.LENGTH_SHORT).show()
             return
         }
         Toast.makeText(this, "已复制", Toast.LENGTH_SHORT).show()
@@ -517,51 +540,29 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ---------------- 记录数量上限 ----------------
+    // ---------------- 备份 / 导入 ----------------
 
-    private fun showMaxRecordsDialog() {
-        val current = repo.getMaxRecords()
-        val presets = arrayOf("无限制（0）", "100 条", "300 条", "500 条", "1000 条", "自定义…")
-        val values = intArrayOf(0, 100, 300, 500, 1000, -1)
-        AlertDialog.Builder(this)
-            .setTitle("记录数量上限（当前：${if (current == 0) "无限制" else "$current 条"}）\n超出后自动删除最旧的非收藏记录")
-            .setItems(presets) { _, which ->
-                val v = values[which]
-                if (v >= 0) {
-                    repo.setMaxRecords(v)
-                    refreshMaxRecordsBtn()
-                    Toast.makeText(
-                        this,
-                        if (v == 0) "已设为无限制" else "上限已设为 $v 条",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                } else {
-                    showCustomMaxDialog()
-                }
-            }
-            .show()
+    /** 备份入口：设置页已选保存文件夹时直接写入该文件夹，否则手动选位置 */
+    private fun onBackupClick() {
+        val name = "clipditto_backup_${System.currentTimeMillis()}.zip"
+        val doc = createDocInBackupTree(name, "application/zip")
+        if (doc != null) doBackup(doc) else backupLauncher.launch(name)
     }
 
-    private fun showCustomMaxDialog() {
-        val input = EditText(this).apply {
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
-            hint = "输入条数，0 表示无限制"
-        }
-        AlertDialog.Builder(this)
-            .setTitle("自定义数量上限")
-            .setView(input)
-            .setPositiveButton("确定") { _, _ ->
-                val v = input.text.toString().toIntOrNull()?.coerceAtLeast(0) ?: 0
-                repo.setMaxRecords(v)
-                refreshMaxRecordsBtn()
-                Toast.makeText(
-                    this,
-                    if (v == 0) "已设为无限制" else "上限已设为 $v 条",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-            .setNegativeButton("取消", null)
-            .show()
+    /** 在设置页选择的保存文件夹里新建文档，返回文档 Uri；未设置或失败返回 null */
+    private fun createDocInBackupTree(displayName: String, mime: String): Uri? {
+        val treeStr = AppSettings.getBackupTreeUri(this) ?: return null
+        return runCatching {
+            val treeUri = Uri.parse(treeStr)
+            val treeDocUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(
+                treeUri, android.provider.DocumentsContract.getTreeDocumentId(treeUri)
+            )
+            android.provider.DocumentsContract.createDocument(
+                contentResolver, treeDocUri, mime, displayName
+            )
+        }.onFailure {
+            Toast.makeText(this, "保存文件夹不可用，请到设置页重新选择", Toast.LENGTH_LONG).show()
+        }.getOrNull()
     }
 
     // ---------------- 版本更新 ----------------

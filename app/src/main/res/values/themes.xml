@@ -6,4 +6,34 @@
         <item name="colorSecondary">@color/teal_200</item>
         <item name="android:statusBarColor">@color/purple_700</item>
     </style>
+
+    <!-- 设置页：分节标题 -->
+    <style name="SettingsSectionTitle">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:paddingHorizontal">16dp</item>
+        <item name="android:paddingTop">16dp</item>
+        <item name="android:paddingBottom">4dp</item>
+        <item name="android:textColor">@color/purple_500</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- 设置页：分节说明文字 -->
+    <style name="SettingsSectionHint">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:paddingHorizontal">16dp</item>
+        <item name="android:paddingBottom">4dp</item>
+        <item name="android:textColor">#888888</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <!-- 设置页：整宽条目按钮 -->
+    <style name="SettingsItemButton">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginHorizontal">16dp</item>
+        <item name="android:layout_marginVertical">2dp</item>
+    </style>
 </resources>

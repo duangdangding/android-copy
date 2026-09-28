@@ -10,6 +10,8 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        // 外观主题：默认跟随系统，按设置应用
+        runCatching { com.clipditto.app.util.AppSettings.applyTheme(this) }
         createNotificationChannel()
         // Shizuku 剪贴板通道：监听 binder 到来/死亡，可用时自动绑定
         runCatching { com.clipditto.app.service.ShizukuClipboard.init() }

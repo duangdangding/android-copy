@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 设置页：悬浮球 / 悬浮面板 / 外观主题 / 记录规则 / 存储位置 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="@color/purple_500"
+        android:navigationIcon="@android:drawable/ic_menu_revert"
+        android:title="设置"
+        android:titleTextColor="@color/white" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="24dp">
+
+            <!-- 悬浮球 -->
+            <TextView
+                style="@style/SettingsSectionTitle"
+                android:text="悬浮球" />
+
+            <Button
+                android:id="@+id/btnBallEnabled"
+                style="@style/SettingsItemButton"
+                android:text="显示悬浮球：开" />
+
+            <TextView
+                style="@style/SettingsSectionHint"
+                android:text="关闭悬浮球后后台监听不受影响，仍会自动记录剪贴板；长按悬浮球也可直接隐藏" />
+
+            <!-- 悬浮面板 -->
+            <TextView
+                style="@style/SettingsSectionTitle"
+                android:text="悬浮面板" />
+
+            <Button
+                android:id="@+id/btnRememberPanelSize"
+                style="@style/SettingsItemButton"
+                android:text="记录调整后的弹窗列表大小：开" />
+
+            <TextView
+                style="@style/SettingsSectionHint"
+                android:text="关闭后每次打开弹窗列表都使用默认大小，不保存拖拽调整结果" />
+
+            <!-- 外观主题 -->
+            <TextView
+                style="@style/SettingsSectionTitle"
+                android:text="外观主题" />
+
+            <Button
+                android:id="@+id/btnTheme"
+                style="@style/SettingsItemButton"
+                android:text="主题：跟随系统" />
+
+            <!-- 记录规则 -->
+            <TextView
+                style="@style/SettingsSectionTitle"
+                android:text="记录规则" />
+
+            <Button
+                android:id="@+id/btnMaxRecords"
+                style="@style/SettingsItemButton"
+                android:text="最多保存记录数：不限制" />
+
+            <Button
+                android:id="@+id/btnRetentionDays"
+                style="@style/SettingsItemButton"
+                android:text="数据保留天数：不限制" />
+
+            <TextView
+                style="@style/SettingsSectionHint"
+                android:text="超出规则后自动清理最旧的非收藏记录，收藏记录始终保留" />
+
+            <!-- 存储位置 -->
+            <TextView
+                style="@style/SettingsSectionTitle"
+                android:text="存储位置" />
+
+            <Button
+                android:id="@+id/btnBackupDir"
+                style="@style/SettingsItemButton"
+                android:text="数据库/配置保存文件夹：未设置" />
+
+            <TextView
+                style="@style/SettingsSectionHint"
+                android:text="设置后，备份（数据库 zip）和导出的配置（json）会直接保存到该文件夹" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingHorizontal="16dp">
+
+                <Button
+                    android:id="@+id/btnExportConfig"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="4dp"
+                    android:text="导出配置" />
+
+                <Button
+                    android:id="@+id/btnImportConfig"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="4dp"
+                    android:text="导入配置" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

@@ -45,6 +45,7 @@ import com.clipditto.app.sync.relay.RelaySyncManager
 import com.clipditto.app.ui.HistoryAdapter
 import com.clipditto.app.ui.ItemActionButtons
 import com.clipditto.app.ui.MainActivity
+import com.clipditto.app.util.AppSettings
 import com.clipditto.app.util.FuzzySearch
 import com.clipditto.app.util.MediaFiles
 import kotlinx.coroutines.CoroutineScope
@@ -273,12 +274,25 @@ class ClipboardService : Service() {
                 stopSelf()
                 return START_NOT_STICKY
             }
+            // 悬浮球独立开关：只增删悬浮球，不影响剪贴板监听
+            ACTION_SHOW_BALL -> {
+                startForeground(NOTIFY_ID, buildNotification())
+                showBall()
+                return START_STICKY
+            }
+            ACTION_HIDE_BALL -> {
+                startForeground(NOTIFY_ID, buildNotification())
+                hideBall()
+                hidePanel()
+                return START_STICKY
+            }
         }
         startForeground(NOTIFY_ID, buildNotification())
         clipboard.addPrimaryClipChangedListener(clipListener)
         // HyperOS/MIUI 上系统剪贴板回调可能不下发，改由无障碍事件驱动轮询兜底
         PasteAccessibilityService.copyTrigger = { signal -> onPossibleClipboardCopy(signal) }
-        showBall()
+        // 悬浮球按设置决定是否显示；关闭悬浮球不影响后台监听
+        if (AppSettings.isBallEnabled(this)) showBall()
         Log.d(TAG, "服务已启动，剪贴板监听已注册")
         return START_STICKY
     }
@@ -533,18 +547,36 @@ class ClipboardService : Service() {
         var startY = 0
         var moved = false
 
+        // 长按悬浮球 = 隐藏悬浮球（后台监听不受影响，可到主页/设置页重新开启）
+        val longPressHide = Runnable {
+            if (!moved) {
+                AppSettings.setBallEnabled(this@ClipboardService, false)
+                hidePanel()
+                hideBall()
+                Toast.makeText(
+                    this@ClipboardService,
+                    "悬浮球已隐藏，可到主页「悬浮球」按钮重新开启",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+
         view.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     downX = event.rawX; downY = event.rawY
                     startX = params.x; startY = params.y
                     moved = false
+                    handler.postDelayed(longPressHide, 600)
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - downX
                     val dy = event.rawY - downY
-                    if (!moved && (Math.abs(dx) > 12 || Math.abs(dy) > 12)) moved = true
+                    if (!moved && (Math.abs(dx) > 12 || Math.abs(dy) > 12)) {
+                        moved = true
+                        handler.removeCallbacks(longPressHide)
+                    }
                     if (moved) {
                         params.x = startX + dx.toInt()
                         params.y = startY + dy.toInt()
@@ -553,7 +585,12 @@ class ClipboardService : Service() {
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (!moved) togglePanel()
+                    handler.removeCallbacks(longPressHide)
+                    if (!moved && ballView != null) togglePanel()
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    handler.removeCallbacks(longPressHide)
                     true
                 }
                 else -> false
@@ -598,8 +635,15 @@ class ClipboardService : Service() {
         val prefs = getSharedPreferences(BootReceiver.PREFS, Context.MODE_PRIVATE)
         val defWidth = (dm.widthPixels * 0.92f).toInt()
         val defListH = (360 * dm.density).toInt()
-        val savedW = prefs.getInt("panel_w", defWidth).coerceIn(dm.widthPixels / 2, dm.widthPixels)
-        val savedH = prefs.getInt("panel_h", defListH).coerceIn((200 * dm.density).toInt(), (dm.heightPixels * 0.75f).toInt())
+        // 「记录调整后的弹窗列表大小」关闭时：忽略已保存的宽高，也不保存调整结果
+        val rememberSize = AppSettings.isRememberPanelSize(this)
+        val savedW = if (rememberSize)
+            prefs.getInt("panel_w", defWidth).coerceIn(dm.widthPixels / 2, dm.widthPixels)
+        else defWidth
+        val savedH = if (rememberSize)
+            prefs.getInt("panel_h", defListH)
+                .coerceIn((200 * dm.density).toInt(), (dm.heightPixels * 0.75f).toInt())
+        else defListH
         val savedX = prefs.getInt("panel_x", (dm.widthPixels - savedW) / 2)
         val savedY = prefs.getInt("panel_y", (dm.heightPixels * 0.15f).toInt())
 
@@ -674,10 +718,12 @@ class ClipboardService : Service() {
                         return true
                     }
                     MotionEvent.ACTION_UP -> {
-                        prefs.edit()
-                            .putInt("panel_w", params.width)
-                            .putInt("panel_h", recycler.layoutParams.height)
-                            .apply()
+                        if (rememberSize) {
+                            prefs.edit()
+                                .putInt("panel_w", params.width)
+                                .putInt("panel_h", recycler.layoutParams.height)
+                                .apply()
+                        }
                         return true
                     }
                 }
@@ -1011,6 +1057,8 @@ class ClipboardService : Service() {
 
     companion object {
         const val ACTION_STOP = "com.clipditto.app.action.STOP"
+        const val ACTION_SHOW_BALL = "com.clipditto.app.action.SHOW_BALL"
+        const val ACTION_HIDE_BALL = "com.clipditto.app.action.HIDE_BALL"
         private const val NOTIFY_ID = 1001
         private const val TAG = "ClipDitto"
         private const val KEY_LAST_HANDLED_SIG = "last_handled_sig"
@@ -1032,6 +1080,20 @@ class ClipboardService : Service() {
 
         fun stop(context: Context) {
             context.startService(Intent(context, ClipboardService::class.java).setAction(ACTION_STOP))
+        }
+
+        /**
+         * 悬浮球独立开关：只写入设置并通知运行中的服务增删悬浮球，
+         * 不影响剪贴板监听；服务未运行时设置在下次启动服务时生效。
+         */
+        fun setBallVisible(context: Context, visible: Boolean) {
+            AppSettings.setBallEnabled(context, visible)
+            if (isRunning) {
+                val action = if (visible) ACTION_SHOW_BALL else ACTION_HIDE_BALL
+                context.startService(
+                    Intent(context, ClipboardService::class.java).setAction(action)
+                )
+            }
         }
     }
 }

@@ -49,7 +49,7 @@
                 android:paddingVertical="2dp">
 
                 <Button
-                    android:id="@+id/btnToggleService"
+                    android:id="@+id/btnToggleListen"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
@@ -58,7 +58,41 @@
                     android:insetBottom="@dimen/main_btn_inset_v"
                     android:minHeight="@dimen/main_btn_min_h"
                     android:singleLine="true"
-                    android:text="开启监听+悬浮球"
+                    android:text="开启监听"
+                    android:textSize="@dimen/main_btn_text_size" />
+
+                <Button
+                    android:id="@+id/btnToggleBall"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="4dp"
+                    android:insetTop="@dimen/main_btn_inset_v"
+                    android:insetBottom="@dimen/main_btn_inset_v"
+                    android:minHeight="@dimen/main_btn_min_h"
+                    android:singleLine="true"
+                    android:text="悬浮球：开"
+                    android:textSize="@dimen/main_btn_text_size" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="2dp">
+
+                <Button
+                    android:id="@+id/btnSettings"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="4dp"
+                    android:insetTop="@dimen/main_btn_inset_v"
+                    android:insetBottom="@dimen/main_btn_inset_v"
+                    android:minHeight="@dimen/main_btn_min_h"
+                    android:singleLine="true"
+                    android:text="设置"
                     android:textSize="@dimen/main_btn_text_size" />
 
                 <Button
@@ -145,17 +179,6 @@
                     android:text="导入"
                     android:textSize="@dimen/main_btn_text_size" />
             </LinearLayout>
-
-            <Button
-                android:id="@+id/btnMaxRecords"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginHorizontal="8dp"
-                android:insetTop="@dimen/main_btn_inset_v"
-                android:insetBottom="@dimen/main_btn_inset_v"
-                android:minHeight="@dimen/main_btn_min_h"
-                android:text="记录数量上限：无限制"
-                android:textSize="@dimen/main_btn_text_size" />
     </LinearLayout>
 
     <!-- 搜索框固定在列表上方 -->

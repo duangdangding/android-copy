@@ -3,6 +3,7 @@ package com.clipditto.app.data
 import android.content.Context
 import android.net.Uri
 import android.webkit.MimeTypeMap
+import com.clipditto.app.util.AppSettings
 import com.clipditto.app.util.MediaFiles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -29,7 +30,9 @@ class ClipRepository(private val context: Context) {
 
     suspend fun latest(): ClipItem? = dao.latest()
 
-    /** 插入记录，并按用户设置的数量上限自动清理最旧的非收藏记录（0 = 不限制） */
+    /** 插入记录，并按用户设置的记录规则自动清理：
+     *  1. 数量上限：超出后删除最旧的非收藏记录（0 = 不限制）
+     *  2. 保留天数：删除早于截止时间的非收藏记录（0 = 不限制） */
     suspend fun insert(item: ClipItem): Long = withContext(Dispatchers.IO) {
         val id = dao.insert(item)
         val max = getMaxRecords()
@@ -42,7 +45,21 @@ class ClipRepository(private val context: Context) {
                 }
             }
         }
+        enforceRetention()
         id
+    }
+
+    /** 按「数据保留天数」清理过期的非收藏记录（含媒体文件），返回清理条数；0 天 = 不限制 */
+    suspend fun enforceRetention(): Int = withContext(Dispatchers.IO) {
+        val days = AppSettings.getRetentionDays(context)
+        if (days <= 0) return@withContext 0
+        val cutoff = System.currentTimeMillis() - days * 86400_000L
+        val expired = dao.expiredNonFavorite(cutoff)
+        expired.forEach { old ->
+            old.filePath?.let { MediaFiles.delete(context, it) }
+            dao.deleteById(old.id)
+        }
+        expired.size
     }
 
     /** 查找相同文本的记录 */

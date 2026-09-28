@@ -53,9 +53,11 @@
 ## 代码约定
 
 - 注释、提交信息、面向用户的字符串用**中文**；APK 文件名也含中文。
+- **所有面向用户的提示内容必须使用中文**：Toast、对话框标题/正文/按钮、通知、状态栏文字、按钮文字、空列表提示等一律中文，新增代码不得出现英文提示（Shizuku 等产品专名除外）。
 - 新增依赖前先确认 mavenCentral / google 已有版本，尽量复用现有库（material / recyclerview / lifecycle / room）。
 - 改 Room 实体（`ClipItem`）意味着数据库迁移：同步更新 `ClipDatabase` 的 version 和迁移逻辑。
 - 悬浮窗相关 UI 在 `service/ClipboardService.kt` 内动态构建 + `res/layout/view_floating_*.xml`，改动时注意悬浮球拖动/单击展开的手势逻辑。
+- 设置项统一走 `util/AppSettings.kt`（存 "settings" SharedPreferences），新增设置项在这里加读写方法，并在 `ui/SettingsActivity.kt` 暴露入口。
 
 ## 仓库内其他文件
 
