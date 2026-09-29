@@ -390,18 +390,46 @@ class FileShareActivity : AppCompatActivity() {
                 progressBar.progress = i + 1
             }
             dialog.dismiss()
-            val msg = buildString {
-                append("成功 $ok 个")
-                if (failures.isNotEmpty()) {
-                    append("，失败 ${failures.size} 个\n")
-                    append(failures.joinToString("\n"))
-                }
+            showSendResult(ok, failures)
+        }
+    }
+
+    /** 发送结果弹窗：状态图标 + 汇总信息，按钮读秒 5 秒后自动关闭 */
+    private fun showSendResult(ok: Int, failures: List<String>) {
+        val view = LayoutInflater.from(this).inflate(R.layout.dialog_fs_result, null)
+        val allOk = failures.isEmpty()
+        // 全部成功绿 ✓，有失败橙 !
+        view.findViewById<TextView>(R.id.tvFsResultIcon).apply {
+            text = if (allOk) "✓" else "!"
+            backgroundTintList = android.content.res.ColorStateList.valueOf(
+                androidx.core.content.ContextCompat.getColor(
+                    this@FileShareActivity,
+                    if (allOk) R.color.badge_image else R.color.badge_video
+                )
+            )
+        }
+        view.findViewById<TextView>(R.id.tvFsResultTitle).text =
+            if (allOk) "发送完成" else "部分发送失败"
+        view.findViewById<TextView>(R.id.tvFsResultMsg).text = buildString {
+            append("成功 $ok 个")
+            if (failures.isNotEmpty()) {
+                append("，失败 ${failures.size} 个\n")
+                append(failures.joinToString("\n"))
             }
-            AlertDialog.Builder(this@FileShareActivity)
-                .setTitle("发送结果")
-                .setMessage(msg)
-                .setPositiveButton("知道了", null)
-                .show()
+        }
+
+        val dialog = AlertDialog.Builder(this).setView(view).create()
+        val btn = view.findViewById<Button>(R.id.btnFsResultOk)
+        btn.setOnClickListener { dialog.dismiss() }
+        dialog.show()
+        // 读秒自动关闭；弹窗销毁（含页面退出）时协程随 lifecycleScope 取消
+        lifecycleScope.launch {
+            for (s in 5 downTo 1) {
+                if (!dialog.isShowing) return@launch
+                btn.text = "知道了（$s）"
+                delay(1000)
+            }
+            if (dialog.isShowing) dialog.dismiss()
         }
     }
 
