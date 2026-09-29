@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 底部弹出菜单（BottomSheet）：记录长按操作——查看详情 / 收藏置顶 / 删除。
+     主界面与悬浮面板共用本布局，控件 ID 勿改 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingBottom="12dp">
+
+    <!-- 顶部小把手，提示可下拉关闭 -->
+    <View
+        android:layout_width="32dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="8dp"
+        android:background="@drawable/bg_sheet_handle" />
+
+    <!-- 记录内容预览（一行截断），让用户确认操作对象 -->
+    <TextView
+        android:id="@+id/tvSheetPreview"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:paddingHorizontal="20dp"
+        android:paddingBottom="6dp"
+        android:singleLine="true"
+        android:textColor="@color/text_hint"
+        android:textSize="13sp" />
+
+    <TextView
+        android:id="@+id/rowSheetDetail"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/selectableItemBackground"
+        android:paddingHorizontal="20dp"
+        android:paddingVertical="14dp"
+        android:text="查看详情"
+        android:textColor="@color/text_primary"
+        android:textSize="16sp" />
+
+    <TextView
+        android:id="@+id/rowSheetFav"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/selectableItemBackground"
+        android:paddingHorizontal="20dp"
+        android:paddingVertical="14dp"
+        android:textColor="@color/text_primary"
+        android:textSize="16sp" />
+
+    <TextView
+        android:id="@+id/rowSheetDelete"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/selectableItemBackground"
+        android:paddingHorizontal="20dp"
+        android:paddingVertical="14dp"
+        android:text="删除"
+        android:textColor="@color/danger"
+        android:textSize="16sp" />
+</LinearLayout>

@@ -29,6 +29,7 @@ import com.clipditto.app.BuildConfig
 import com.clipditto.app.R
 import com.clipditto.app.backup.BackupManager
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.snackbar.Snackbar
 import com.clipditto.app.data.ClipItem
 import com.clipditto.app.data.ClipRepository
@@ -389,29 +390,43 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "已复制", Toast.LENGTH_SHORT).show()
     }
 
-    /** 长按记录弹出菜单：详情 / 收藏置顶 / 删除 */
+    /** 长按记录弹出底部菜单：详情 / 收藏置顶 / 删除 */
     private fun showItemMenu(item: ClipItem) {
-        val favLabel = if (item.favorite) "取消收藏" else "★ 收藏置顶"
-        AlertDialog.Builder(this)
-            .setItems(arrayOf("查看详情", favLabel, "删除")) { _, which ->
-                when (which) {
-                    0 -> showItemDetail(item)
-                    1 -> lifecycleScope.launch {
-                        repo.toggleFavorite(item)
-                        Toast.makeText(
-                            this@MainActivity,
-                            if (item.favorite) "已取消收藏" else "已收藏置顶",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                    2 -> confirmDeleteItem(item)
-                }
+        val sheet = BottomSheetDialog(this)
+        val view = layoutInflater.inflate(R.layout.sheet_item_menu, null)
+        // 顶部显示内容预览，确认操作对象
+        view.findViewById<TextView>(R.id.tvSheetPreview).text =
+            item.text?.take(60)
+                ?: item.filePath?.let { MediaFiles.displayName(this, it) }
+                ?: ClipType.label(item.type)
+        view.findViewById<TextView>(R.id.rowSheetFav).text =
+            if (item.favorite) "取消收藏" else "★ 收藏置顶"
+        view.findViewById<View>(R.id.rowSheetDetail).setOnClickListener {
+            sheet.dismiss()
+            showItemDetail(item)
+        }
+        view.findViewById<View>(R.id.rowSheetFav).setOnClickListener {
+            sheet.dismiss()
+            lifecycleScope.launch {
+                repo.toggleFavorite(item)
+                Toast.makeText(
+                    this@MainActivity,
+                    if (item.favorite) "已取消收藏" else "已收藏置顶",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
-            .show()
+        }
+        view.findViewById<View>(R.id.rowSheetDelete).setOnClickListener {
+            sheet.dismiss()
+            confirmDeleteItem(item)
+        }
+        sheet.setContentView(view)
+        sheet.show()
     }
 
-    /** 详情弹窗：显示完整内容（长文本内部滚动、可选择复制），
-     *  底部固定「粘贴」+ 与列表项一致的动作按钮（打开平台/浏览器） */
+    /** 详情底部弹窗：显示完整内容（长文本内部滚动、可选择复制），
+     *  底部固定「粘贴」+ 与列表项一致的动作按钮（打开平台/浏览器）；
+     *  下拉、点外部或返回键关闭 */
     private fun showItemDetail(item: ClipItem) {
         val view = layoutInflater.inflate(R.layout.dialog_detail, null)
         val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
@@ -438,11 +453,7 @@ class MainActivity : AppCompatActivity() {
         // 图片/视频记录：显示媒体预览大图
         DetailPreview.bind(view.findViewById(R.id.ivDetailImage), item)
 
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("详情")
-            .setView(view)
-            .setNegativeButton("关闭", null)
-            .create()
+        val dialog = BottomSheetDialog(this)
 
         // 动作按钮：与列表项完全一致的识别和跳转逻辑
         ItemActionButtons.bind(
@@ -458,6 +469,7 @@ class MainActivity : AppCompatActivity() {
             copyToSystem(item)
         }
 
+        dialog.setContentView(view)
         dialog.show()
         // 内容区太高时压缩为屏幕 45% 并内部滚动，保证底部按钮始终可见
         val scroll = view.findViewById<ScrollView>(R.id.detailScroll)

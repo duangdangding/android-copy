@@ -52,6 +52,7 @@ import com.clipditto.app.util.AppSettings
 import com.clipditto.app.util.FuzzySearch
 import com.clipditto.app.util.MediaFiles
 import com.clipditto.app.util.StorageStats
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -1161,47 +1162,57 @@ class ClipboardService : Service() {
         }
     }
 
-    /** 面板里长按记录：详情 / 收藏置顶 / 删除 菜单 */
+    /** 面板里长按记录：底部弹出菜单（详情 / 收藏置顶 / 删除） */
     private fun showPanelItemMenu(item: ClipItem) {
-        val favLabel = if (item.favorite) "取消收藏" else "★ 收藏置顶"
         runCatching {
-            val dialog = android.app.AlertDialog
-                .Builder(ContextThemeWrapper(this, R.style.Theme_ClipDitto))
-                .setItems(arrayOf("查看详情", favLabel, "删除")) { _, which ->
-                    if (which == 0) {
-                        showPanelItemDetail(item)
-                        return@setItems
-                    }
-                    scope.launch {
-                        when (which) {
-                            1 -> {
-                                repo.toggleFavorite(item)
-                                withContext(Dispatchers.Main) {
-                                    Toast.makeText(
-                                        this@ClipboardService,
-                                        if (item.favorite) "已取消收藏" else "已收藏置顶",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                            }
-                            2 -> {
-                                repo.delete(item)
-                                withContext(Dispatchers.Main) {
-                                    Toast.makeText(this@ClipboardService, "已删除", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        }
+            val themedCtx = ContextThemeWrapper(this, R.style.Theme_ClipDitto)
+            val sheet = BottomSheetDialog(themedCtx)
+            sheet.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+            val view = LayoutInflater.from(themedCtx).inflate(R.layout.sheet_item_menu, null)
+            // 顶部显示内容预览，确认操作对象
+            view.findViewById<TextView>(R.id.tvSheetPreview).text =
+                item.text?.take(60)
+                    ?: item.filePath?.let { MediaFiles.displayName(this, it) }
+                    ?: ClipType.label(item.type)
+            view.findViewById<TextView>(R.id.rowSheetFav).text =
+                if (item.favorite) "取消收藏" else "★ 收藏置顶"
+            view.findViewById<View>(R.id.rowSheetDetail).setOnClickListener {
+                sheet.dismiss()
+                showPanelItemDetail(item)
+            }
+            view.findViewById<View>(R.id.rowSheetFav).setOnClickListener {
+                sheet.dismiss()
+                scope.launch {
+                    repo.toggleFavorite(item)
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(
+                            this@ClipboardService,
+                            if (item.favorite) "已取消收藏" else "已收藏置顶",
+                            Toast.LENGTH_SHORT
+                        ).show()
                         refreshPanel()
                     }
                 }
-                .create()
-            dialog.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
-            dialog.show()
+            }
+            view.findViewById<View>(R.id.rowSheetDelete).setOnClickListener {
+                sheet.dismiss()
+                // 与左滑删除一致：先弹确认框
+                showPanelDeleteConfirm(item)
+            }
+            sheet.setContentView(view)
+            sheet.show()
+        }.onFailure {
+            Log.e(TAG, "面板菜单弹窗打开失败", it)
+            Toast.makeText(
+                this, "菜单弹窗打开失败：${it.javaClass.simpleName}: ${it.message}",
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 
-    /** 面板详情弹窗：显示完整内容（悬浮窗形式，长文本内部滚动、可选择复制），
-     *  底部固定「粘贴」+ 与列表项一致的动作按钮（打开平台/浏览器） */
+    /** 面板详情底部弹窗：显示完整内容（悬浮窗形式，长文本内部滚动、可选择复制），
+     *  底部固定「粘贴」+ 与列表项一致的动作按钮（打开平台/浏览器）；
+     *  下拉、点外部或返回键关闭 */
     private fun showPanelItemDetail(item: ClipItem) {
         runCatching {
             // Service 上下文不带应用主题（Material 组件会 inflate 失败），需显式包裹
@@ -1231,12 +1242,8 @@ class ClipboardService : Service() {
             // 图片/视频记录：显示媒体预览大图
             DetailPreview.bind(view.findViewById(R.id.ivDetailImage), item)
 
-            val dialog = android.app.AlertDialog.Builder(themedCtx)
-                .setTitle("详情")
-                .setView(view)
-                .setNegativeButton("关闭", null)
-                .create()
-            dialog.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+            val sheet = BottomSheetDialog(themedCtx)
+            sheet.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
 
             // 动作按钮：与列表项完全一致的识别和跳转逻辑，跳转后收起面板
             ItemActionButtons.bind(
@@ -1245,19 +1252,20 @@ class ClipboardService : Service() {
                 view.findViewById(R.id.btnDetailOpenBrowser),
                 item
             ) {
-                dialog.dismiss()
+                sheet.dismiss()
                 hidePanel()
             }
 
             // 粘贴 = 点击列表项：文字直贴下层输入框 / 媒体放回系统剪贴板
             // 详情里操作完后关闭所有弹窗（详情弹窗 + 列表面板）
             view.findViewById<Button>(R.id.btnDetailPaste).setOnClickListener {
-                dialog.dismiss()
+                sheet.dismiss()
                 hidePanel()
                 onItemPicked(item)
             }
 
-            dialog.show()
+            sheet.setContentView(view)
+            sheet.show()
             // 内容区太高时压缩为屏幕 45% 并内部滚动，保证底部按钮始终可见
             val scroll = view.findViewById<ScrollView>(R.id.detailScroll)
             scroll.post {

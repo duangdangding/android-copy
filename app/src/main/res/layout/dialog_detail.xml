@@ -1,11 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 详情弹窗：媒体预览（图片/视频）+ 元信息 + 圆角内容卡片 + 底部动作区。
+<!-- 详情底部弹窗（BottomSheet）：媒体预览（图片/视频）+ 元信息 + 圆角内容卡片 + 底部动作区。
      主界面与悬浮面板共用本布局，控件 ID 勿改 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="20dp">
+    android:paddingHorizontal="20dp"
+    android:paddingTop="4dp"
+    android:paddingBottom="20dp">
+
+    <!-- 顶部小把手，提示可下拉关闭 -->
+    <View
+        android:layout_width="32dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="10dp"
+        android:background="@drawable/bg_sheet_handle" />
 
     <!-- 图片/视频预览：仅媒体类型显示；支持双指缩放、拖动、双击放大/还原 -->
     <com.clipditto.app.ui.ZoomableImageView
