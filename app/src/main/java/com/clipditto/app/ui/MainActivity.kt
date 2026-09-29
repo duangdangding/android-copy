@@ -256,34 +256,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** 显示监听服务 / 无障碍 / 使用情况访问三项状态，点击可跳转对应设置页 */
+    /** 显示监听服务 / 无障碍两项状态，无障碍未开启时点击跳转设置页 */
     private fun refreshStatus() {
-        val usageGranted = hasUsageAccess()
         val status = buildString {
             append(if (ClipboardService.isRunning) "✅ 监听服务运行中" else "⛔ 监听服务未开启")
             append("　")
             append(if (PasteAccessibilityService.isEnabled) "✅ 无障碍已开启" else "⚠️ 无障碍未开启（点我开启）")
-            append("　")
-            append(if (usageGranted) "✅ 使用情况访问" else "⚠️ 使用情况访问未授权（来源识别备用）")
         }
         findViewById<TextView>(R.id.tvStatus).apply {
             text = status
             setOnClickListener {
-                when {
-                    !PasteAccessibilityService.isEnabled ->
-                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                    !usageGranted ->
-                        startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                if (!PasteAccessibilityService.isEnabled) {
+                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                 }
             }
         }
-    }
-
-    private fun hasUsageAccess(): Boolean {
-        val usm = getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
-        val end = System.currentTimeMillis()
-        val events = usm.queryEvents(end - 60_000L, end)
-        return events.hasNextEvent()
     }
 
     // ---------------- 服务开关（监听与悬浮球相互独立） ----------------
@@ -433,7 +420,6 @@ class MainActivity : AppCompatActivity() {
         val meta = buildString {
             append(ClipType.label(item.type))
             append(" · ${fmt.format(Date(item.timestamp))}")
-            item.sourceApp?.takeIf { it.isNotBlank() }?.let { append("\n来源：$it") }
             item.text?.let { append(" · 共 ${it.length} 字") }
         }
         view.findViewById<TextView>(R.id.detailMeta).text = meta

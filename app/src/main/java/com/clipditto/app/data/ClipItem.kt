@@ -17,7 +17,10 @@ data class ClipItem(
      */
     val filePath: String? = null,
     val mimeType: String? = null,
-    /** 复制来源 App 的包名（取不到则为空） */
+    /**
+     * 复制来源 App 的包名。
+     * 已停用：新记录不再写入（v4.9 起），仅为兼容历史数据与局域网同步协议保留该列
+     */
     val sourceApp: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
     val favorite: Boolean = false,

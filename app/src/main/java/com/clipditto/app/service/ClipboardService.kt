@@ -4,8 +4,6 @@ import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
-import android.app.usage.UsageEvents
-import android.app.usage.UsageStatsManager
 import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
@@ -423,18 +421,23 @@ class ClipboardService : Service() {
             Log.w(TAG, "handleClip：内容为空，不入库")
             return
         }
-        // 与"恢复监听基线"一致：说明是暂停期间复制的内容，丢弃一次，永不补录
         val sig = sigOf(clip)
-        if (sig != null) lastHandledSig = sig
+        // 与"恢复监听基线"一致：说明是暂停期间复制的内容，丢弃一次，永不补录
+        // （先清基线再做签名闸门：基线内容可能恰好等于上次处理的签名，不能被闸门吞掉清理动作）
         if (sig != null && sig == baselineSig) {
             baselineSig = null
+            lastHandledSig = sig
             Log.d(TAG, "命中暂停基线，丢弃不补录")
             return
         }
+        // 签名闸门：同一内容已处理过直接返回——监听器和轮询兜底可能在主线程先后触发，
+        // 这里同步检查+置位（主线程天然串行），从根上避免重复入库
+        if (sig != null && sig == lastHandledSig) {
+            Log.d(TAG, "签名未变，跳过")
+            return
+        }
+        if (sig != null) lastHandledSig = sig
         val item = clip.getItemAt(0) ?: return
-        // 来源 App：优先用无障碍服务追踪的最后前台包名；
-        // 无障碍不可用（如被 MIUI 杀掉）时回退到使用情况统计推断
-        val source = guessSourcePackage()
 
         scope.launch {
             val text = item.text?.toString()
@@ -442,39 +445,14 @@ class ClipboardService : Service() {
             Log.d(TAG, "handleClip：uri=${item.uri != null} text=${text?.take(20)}")
 
             when {
-                item.uri != null -> saveUriClip(item.uri, clip.description, source)
-                !text.isNullOrBlank() -> saveTextClip(text, source)
+                item.uri != null -> saveUriClip(item.uri, clip.description)
+                !text.isNullOrBlank() -> saveTextClip(text)
                 else -> Log.w(TAG, "handleClip：既无 uri 也无 text，跳过")
             }
         }
     }
 
-    /** 推断剪贴板内容来源 App 的包名 */
-    private fun guessSourcePackage(): String? {
-        PasteAccessibilityService.lastForegroundPackage
-            ?.takeIf { it != packageName }
-            ?.let { return it }
-        // 回退：使用情况统计（需用户授予「使用情况访问」权限，未授权时返回空）
-        return runCatching {
-            val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-            val end = System.currentTimeMillis()
-            val events = usm.queryEvents(end - 10 * 60_000L, end)
-            val ev = UsageEvents.Event()
-            var last: String? = null
-            while (events.hasNextEvent()) {
-                events.getNextEvent(ev)
-                if ((ev.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND ||
-                        ev.eventType == UsageEvents.Event.ACTIVITY_RESUMED) &&
-                    ev.packageName != packageName
-                ) {
-                    last = ev.packageName
-                }
-            }
-            last
-        }.getOrNull()
-    }
-
-    private suspend fun saveTextClip(text: String, sourceApp: String?) {
+    private suspend fun saveTextClip(text: String) {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
         // 内容相同则不新增，把已有记录顶到最前
@@ -487,8 +465,7 @@ class ClipboardService : Service() {
         val newItem = ClipItem(
             type = ClipType.TEXT,
             text = trimmed,
-            mimeType = ClipDescription.MIMETYPE_TEXT_PLAIN,
-            sourceApp = sourceApp
+            mimeType = ClipDescription.MIMETYPE_TEXT_PLAIN
         )
         val id = repo.insert(newItem)
         Log.d(TAG, "文字入库成功 id=$id")
@@ -496,7 +473,7 @@ class ClipboardService : Service() {
         RelaySyncManager.onLocalText(newItem.copy(id = id))
     }
 
-    private suspend fun saveUriClip(uri: Uri, desc: ClipDescription?, sourceApp: String?) {
+    private suspend fun saveUriClip(uri: Uri, desc: ClipDescription?) {
         val mime = desc?.let { d ->
             (0 until d.mimeTypeCount).map { d.getMimeType(it) }
                 .firstOrNull { it != ClipDescription.MIMETYPE_TEXT_PLAIN }
@@ -524,8 +501,7 @@ class ClipboardService : Service() {
             type = type,
             text = uri.lastPathSegment ?: file.name,
             filePath = file.absolutePath,
-            mimeType = mime,
-            sourceApp = sourceApp
+            mimeType = mime
         )
         val id = repo.insert(newItem)
         Log.d(TAG, "媒体入库成功 id=$id type=$type")
@@ -1222,7 +1198,6 @@ class ClipboardService : Service() {
             val meta = buildString {
                 append(ClipType.label(item.type))
                 append(" · ${fmt.format(Date(item.timestamp))}")
-                item.sourceApp?.takeIf { it.isNotBlank() }?.let { append("\n来源：$it") }
                 item.text?.let { append(" · 共 ${it.length} 字") }
             }
             view.findViewById<TextView>(R.id.detailMeta).text = meta

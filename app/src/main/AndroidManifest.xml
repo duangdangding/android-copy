@@ -22,10 +22,6 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- 开机自启（可选） -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- 使用情况访问（来源识别备用通道；声明后才会出现在系统授权列表里） -->
-    <uses-permission
-        android:name="android.permission.PACKAGE_USAGE_STATS"
-        tools:ignore="ProtectedPermissions" />
 
     <!-- Android 11+ 包可见性：声明要拉起哪些 App，否则系统会返回"未安装" -->
     <queries>

@@ -34,8 +34,6 @@ class HistoryAdapter(
 ) : ListAdapter<ClipItem, HistoryAdapter.VH>(DIFF) {
 
     private val timeFormat = SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault())
-    /** 包名 -> 应用名 缓存 */
-    private val labelCache = HashMap<String, String>()
 
     /** 当前搜索词：非空时列表内容里命中的字符加粗标色 */
     var highlightQuery: String = ""
@@ -48,19 +46,6 @@ class HistoryAdapter(
 
             override fun areContentsTheSame(oldItem: ClipItem, newItem: ClipItem) =
                 oldItem == newItem
-        }
-    }
-
-    private fun sourceLabel(view: View, pkg: String?): String {
-        if (pkg.isNullOrBlank()) return "未知来源"
-        return labelCache.getOrPut(pkg) {
-            runCatching {
-                val pm = view.context.packageManager
-                pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
-            }.getOrElse {
-                // 应用已卸载：只显示包名最后一段，避免一长串包名撑破布局
-                pkg.substringAfterLast('.')
-            }
         }
     }
 
@@ -146,7 +131,6 @@ class HistoryAdapter(
         )
         holder.content.text = highlightMatches(item.text ?: "(无预览)", holder.itemView)
         holder.time.text = timeFormat.format(Date(item.timestamp))
-        holder.source.text = "来自 ${sourceLabel(holder.itemView, item.sourceApp)}"
 
         when (item.type) {
             ClipType.IMAGE -> {
@@ -196,7 +180,6 @@ class HistoryAdapter(
         val type: TextView = view.findViewById(R.id.tvType)
         val content: TextView = view.findViewById(R.id.tvContent)
         val time: TextView = view.findViewById(R.id.tvTime)
-        val source: TextView = view.findViewById(R.id.tvSource)
         val thumb: ImageView = view.findViewById(R.id.ivThumb)
         val openUrl: Button = view.findViewById(R.id.btnOpenUrl)
         val openAlt: Button = view.findViewById(R.id.btnOpenAlt)
