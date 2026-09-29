@@ -7,10 +7,14 @@
         <item name="android:statusBarColor">@color/purple_700</item>
     </style>
 
-    <!-- 主页 Toolbar：紫色底上白色菜单图标与弹出菜单 -->
+    <!-- 主页 Toolbar：紫色底上白色菜单图标；弹出菜单用 PopupMenuTheme，跟随页面浅色/深色 -->
     <style name="ToolbarTheme" parent="ThemeOverlay.Material3.Dark">
         <item name="android:textColorSecondary">@color/white</item>
+        <item name="popupTheme">@style/PopupMenuTheme</item>
     </style>
+
+    <!-- Toolbar 溢出菜单弹层：浅色（夜间模式在 values-night 里换成深色） -->
+    <style name="PopupMenuTheme" parent="ThemeOverlay.Material3.Light" />
 
     <!-- 设置页：分节标题 -->
     <style name="SettingsSectionTitle">

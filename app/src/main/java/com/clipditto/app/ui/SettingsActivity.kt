@@ -7,10 +7,12 @@ import android.os.Bundle
 import android.provider.DocumentsContract
 import android.widget.Button
 import android.widget.EditText
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.appcompat.widget.SwitchCompat
 import androidx.lifecycle.lifecycleScope
 import com.clipditto.app.R
 import com.clipditto.app.backup.ConfigManager
@@ -25,6 +27,7 @@ import java.util.Locale
 
 /**
  * 「设置」页：悬浮球 / 悬浮面板 / 外观主题 / 记录规则 / 存储位置。
+ * 开关项为「标题+副标题+Switch」行；点选项为整行可点、右侧显示当前值。
  * 所有面向用户的提示内容必须使用中文。
  */
 class SettingsActivity : AppCompatActivity() {
@@ -40,7 +43,7 @@ class SettingsActivity : AppCompatActivity() {
                         Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 )
                 AppSettings.setBackupTreeUri(this, it.toString())
-                refreshBackupDirButton()
+                refreshBackupDirRow()
                 Toast.makeText(this, "保存文件夹已设置", Toast.LENGTH_SHORT).show()
             }
         }
@@ -64,11 +67,10 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<MaterialToolbar>(R.id.toolbar)
             .setNavigationOnClickListener { finish() }
 
-        // ---- 悬浮球 ----
-        findViewById<Button>(R.id.btnBallEnabled).setOnClickListener {
-            val now = !AppSettings.isBallEnabled(this)
+        // ---- 悬浮球：Switch 已自行切换视觉状态，直接读 isChecked ----
+        findViewById<SwitchCompat>(R.id.swBallEnabled).setOnClickListener {
+            val now = findViewById<SwitchCompat>(R.id.swBallEnabled).isChecked
             ClipboardService.setBallVisible(this, now)
-            refreshBallButtons()
             Toast.makeText(
                 this,
                 if (now) "悬浮球已开启" else "悬浮球已关闭，后台监听不受影响",
@@ -77,10 +79,9 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         // ---- 悬浮面板 ----
-        findViewById<Button>(R.id.btnRememberPanelSize).setOnClickListener {
-            val now = !AppSettings.isRememberPanelSize(this)
+        findViewById<SwitchCompat>(R.id.swRememberPanelSize).setOnClickListener {
+            val now = findViewById<SwitchCompat>(R.id.swRememberPanelSize).isChecked
             AppSettings.setRememberPanelSize(this, now)
-            refreshPanelButton()
             Toast.makeText(
                 this,
                 if (now) "将记录调整后的弹窗列表大小" else "弹窗列表将始终使用默认大小",
@@ -89,14 +90,14 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         // ---- 外观主题 ----
-        findViewById<Button>(R.id.btnTheme).setOnClickListener { showThemeDialog() }
+        findViewById<android.view.View>(R.id.rowTheme).setOnClickListener { showThemeDialog() }
 
         // ---- 记录规则 ----
-        findViewById<Button>(R.id.btnMaxRecords).setOnClickListener { showMaxRecordsDialog() }
-        findViewById<Button>(R.id.btnRetentionDays).setOnClickListener { showRetentionDialog() }
+        findViewById<android.view.View>(R.id.rowMaxRecords).setOnClickListener { showMaxRecordsDialog() }
+        findViewById<android.view.View>(R.id.rowRetention).setOnClickListener { showRetentionDialog() }
 
         // ---- 存储位置 ----
-        findViewById<Button>(R.id.btnBackupDir).setOnClickListener { showBackupDirDialog() }
+        findViewById<android.view.View>(R.id.rowBackupDir).setOnClickListener { showBackupDirDialog() }
         findViewById<Button>(R.id.btnExportConfig).setOnClickListener { onExportConfigClick() }
         findViewById<Button>(R.id.btnImportConfig).setOnClickListener {
             importConfigLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
@@ -105,24 +106,24 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        refreshBallButtons()
-        refreshPanelButton()
-        refreshThemeButton()
-        refreshMaxRecordsButton()
-        refreshRetentionButton()
-        refreshBackupDirButton()
+        refreshBallSwitch()
+        refreshPanelSwitch()
+        refreshThemeRow()
+        refreshMaxRecordsRow()
+        refreshRetentionRow()
+        refreshBackupDirRow()
     }
 
     // ---------------- 悬浮球 / 面板 ----------------
 
-    private fun refreshBallButtons() {
-        findViewById<Button>(R.id.btnBallEnabled).text =
-            "显示悬浮球：${if (AppSettings.isBallEnabled(this)) "开" else "关"}"
+    private fun refreshBallSwitch() {
+        findViewById<SwitchCompat>(R.id.swBallEnabled).isChecked =
+            AppSettings.isBallEnabled(this)
     }
 
-    private fun refreshPanelButton() {
-        findViewById<Button>(R.id.btnRememberPanelSize).text =
-            "记录调整后的弹窗列表大小：${if (AppSettings.isRememberPanelSize(this)) "开" else "关"}"
+    private fun refreshPanelSwitch() {
+        findViewById<SwitchCompat>(R.id.swRememberPanelSize).isChecked =
+            AppSettings.isRememberPanelSize(this)
     }
 
     // ---------------- 外观主题 ----------------
@@ -133,8 +134,9 @@ class SettingsActivity : AppCompatActivity() {
         else -> "跟随系统"
     }
 
-    private fun refreshThemeButton() {
-        findViewById<Button>(R.id.btnTheme).text = "主题：${themeLabel(AppSettings.getThemeMode(this))}"
+    private fun refreshThemeRow() {
+        findViewById<TextView>(R.id.tvThemeValue).text =
+            themeLabel(AppSettings.getThemeMode(this))
     }
 
     private fun showThemeDialog() {
@@ -156,10 +158,10 @@ class SettingsActivity : AppCompatActivity() {
 
     // ---------------- 记录规则 ----------------
 
-    private fun refreshMaxRecordsButton() {
+    private fun refreshMaxRecordsRow() {
         val max = repo.getMaxRecords()
-        findViewById<Button>(R.id.btnMaxRecords).text =
-            "最多保存记录数：${if (max == 0) "不限制" else "$max 条"}"
+        findViewById<TextView>(R.id.tvMaxRecordsValue).text =
+            if (max == 0) "不限制" else "$max 条"
     }
 
     private fun showMaxRecordsDialog() {
@@ -172,7 +174,7 @@ class SettingsActivity : AppCompatActivity() {
                 val v = values[which]
                 if (v >= 0) {
                     repo.setMaxRecords(v)
-                    refreshMaxRecordsButton()
+                    refreshMaxRecordsRow()
                     Toast.makeText(
                         this,
                         if (v == 0) "已设为不限制" else "最多保存 $v 条",
@@ -196,7 +198,7 @@ class SettingsActivity : AppCompatActivity() {
             .setPositiveButton("确定") { _, _ ->
                 val v = input.text.toString().toIntOrNull()?.coerceAtLeast(0) ?: 0
                 repo.setMaxRecords(v)
-                refreshMaxRecordsButton()
+                refreshMaxRecordsRow()
                 Toast.makeText(
                     this,
                     if (v == 0) "已设为不限制" else "最多保存 $v 条",
@@ -207,10 +209,10 @@ class SettingsActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun refreshRetentionButton() {
+    private fun refreshRetentionRow() {
         val days = AppSettings.getRetentionDays(this)
-        findViewById<Button>(R.id.btnRetentionDays).text =
-            "数据保留天数：${if (days == 0) "不限制" else "$days 天"}"
+        findViewById<TextView>(R.id.tvRetentionValue).text =
+            if (days == 0) "不限制" else "$days 天"
     }
 
     private fun showRetentionDialog() {
@@ -245,7 +247,7 @@ class SettingsActivity : AppCompatActivity() {
     /** 保存保留天数并立即清理一次过期记录 */
     private fun applyRetention(days: Int) {
         AppSettings.setRetentionDays(this, days)
-        refreshRetentionButton()
+        refreshRetentionRow()
         if (days <= 0) {
             Toast.makeText(this, "已设为不限制", Toast.LENGTH_SHORT).show()
             return
@@ -268,11 +270,10 @@ class SettingsActivity : AppCompatActivity() {
             Uri.decode(Uri.parse(treeUri).lastPathSegment ?: treeUri).substringAfter(':')
         }.getOrDefault(treeUri)
 
-    private fun refreshBackupDirButton() {
+    private fun refreshBackupDirRow() {
         val tree = AppSettings.getBackupTreeUri(this)
-        findViewById<Button>(R.id.btnBackupDir).text =
-            if (tree == null) "数据库/配置保存文件夹：未设置"
-            else "数据库/配置保存文件夹：${displayDirName(tree)}"
+        findViewById<TextView>(R.id.tvBackupDirValue).text =
+            if (tree == null) "未设置" else displayDirName(tree)
     }
 
     private fun showBackupDirDialog() {
@@ -286,7 +287,7 @@ class SettingsActivity : AppCompatActivity() {
                     which == 0 -> dirLauncher.launch(null)
                     hasDir && which == 1 -> {
                         AppSettings.setBackupTreeUri(this, null)
-                        refreshBackupDirButton()
+                        refreshBackupDirRow()
                         Toast.makeText(this, "已清除，备份时将手动选择保存位置", Toast.LENGTH_SHORT).show()
                     }
                 }

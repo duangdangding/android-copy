@@ -13,9 +13,10 @@
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
         android:background="@color/purple_500"
-        android:navigationIcon="@android:drawable/ic_menu_revert"
-        android:title="设备同步"
-        android:titleTextColor="@color/white"
+        app:navigationIcon="?attr/homeAsUpIndicator"
+        app:navigationIconTint="@color/white"
+        app:title="设备同步"
+        app:titleTextColor="@color/white"
         app:menu="@menu/menu_devices" />
 
     <androidx.core.widget.NestedScrollView
