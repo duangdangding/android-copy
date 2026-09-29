@@ -1,6 +1,5 @@
 package com.clipditto.app.service
 
-import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.PendingIntent
@@ -672,6 +671,11 @@ class ClipboardService : Service() {
         ballDocked = false
         view.animate().cancel()
         view.alpha = AppSettings.getBallAlpha(this) / 100f
+        // 收缩动画改过的缩放/轴心一并复位
+        view.scaleX = 1f
+        view.scaleY = 1f
+        view.pivotX = sizePx / 2f
+        view.pivotY = sizePx / 2f
         runCatching { wm.updateViewLayout(view, params) }
     }
 
@@ -698,11 +702,17 @@ class ClipboardService : Service() {
         view.animate().cancel()
         view.animate()
             .alpha(AppSettings.getBallAlpha(this) / 100f)
+            .scaleX(1f)
+            .scaleY(1f)
             .setDuration(150)
             .start()
     }
 
-    /** 闲置后收缩：移到最近的屏幕边缘并降低透明度，减少遮挡 */
+    /**
+     * 闲置后收缩：朝最近的屏幕边缘方向缩小变淡，减少遮挡。
+     * 只动视图动画、不移动悬浮窗窗口——逐帧 updateViewLayout 重排悬浮窗
+     * 在部分 ROM 上会闪一帧。
+     */
     private fun dockBallToEdge() {
         val view = ballView ?: return
         val params = ballParams ?: return
@@ -712,21 +722,17 @@ class ClipboardService : Service() {
         val dm = resources.displayMetrics
         val w = view.width.takeIf { it > 0 }
             ?: (AppSettings.getBallSizeDp(this) * dm.density).toInt()
-        // 只露出约 2/3 个球：左边缘往左藏 1/3，右边缘往右藏 1/3
-        val targetX = if (params.x + w / 2 < dm.widthPixels / 2) -w / 3
-        else dm.widthPixels - w * 2 / 3
+        // 轴心放在靠近屏幕边缘的一侧：球朝那个方向缩，视觉上像"贴边收起来"
+        val nearLeft = params.x + w / 2 < dm.widthPixels / 2
+        view.animate().cancel()
+        view.pivotX = if (nearLeft) 0f else w.toFloat()
+        view.pivotY = w / 2f
         view.animate()
             .alpha(AppSettings.getBallAlpha(this) / 100f * 0.35f)
+            .scaleX(0.6f)
+            .scaleY(0.6f)
             .setDuration(250)
             .start()
-        ValueAnimator.ofInt(params.x, targetX).apply {
-            duration = 250
-            addUpdateListener { anim ->
-                params.x = anim.animatedValue as Int
-                runCatching { wm.updateViewLayout(view, params) }
-            }
-            start()
-        }
     }
 
     // ---------------- 悬浮面板 ----------------
