@@ -101,10 +101,26 @@ class MainActivity : AppCompatActivity() {
             onClick = { item -> copyToSystem(item) },
             onLongClick = { item -> showItemMenu(item) }
         )
-        findViewById<RecyclerView>(R.id.recycler).apply {
+        val recyclerView = findViewById<RecyclerView>(R.id.recycler)
+        recyclerView.apply {
             layoutManager = LinearLayoutManager(this@MainActivity)
             adapter = this@MainActivity.adapter
         }
+        // 滑动操作：右滑收藏/取消收藏，左滑删除（弹确认框）
+        SwipeActions.attach(
+            recyclerView, adapter,
+            onFav = { item ->
+                lifecycleScope.launch {
+                    repo.toggleFavorite(item)
+                    Toast.makeText(
+                        this@MainActivity,
+                        if (item.favorite) "已取消收藏" else "已收藏置顶",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            },
+            onDelete = { item -> confirmDeleteItem(item) }
+        )
 
         lifecycleScope.launch {
             repo.clips.collectLatest { list ->
@@ -448,7 +464,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun confirmDeleteItem(item: ClipItem) {
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setMessage("删除这条记录？")
             .setPositiveButton("删除") { _, _ ->
                 lifecycleScope.launch {
@@ -458,6 +474,9 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton("取消", null)
             .show()
+        // 删除按钮红色强调
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            ?.setTextColor(getColor(R.color.danger))
     }
 
     // ---------------- 按时间段删除 ----------------

@@ -8,6 +8,8 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.clipditto.app.R
 import com.clipditto.app.data.ClipItem
@@ -22,12 +24,22 @@ class HistoryAdapter(
     private val onLongClick: (ClipItem) -> Unit,
     /** 点击「打开」按钮打开网址后的回调（悬浮面板用于收起列表） */
     private val onOpenUrl: (() -> Unit)? = null
-) : RecyclerView.Adapter<HistoryAdapter.VH>() {
+) : ListAdapter<ClipItem, HistoryAdapter.VH>(DIFF) {
 
-    private val items = mutableListOf<ClipItem>()
     private val timeFormat = SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault())
     /** 包名 -> 应用名 缓存 */
     private val labelCache = HashMap<String, String>()
+
+    companion object {
+        /** 记录 id 定位条目，数据类 equals 判断内容变化（收藏/时间戳等） */
+        private val DIFF = object : DiffUtil.ItemCallback<ClipItem>() {
+            override fun areItemsTheSame(oldItem: ClipItem, newItem: ClipItem) =
+                oldItem.id == newItem.id
+
+            override fun areContentsTheSame(oldItem: ClipItem, newItem: ClipItem) =
+                oldItem == newItem
+        }
+    }
 
     private fun sourceLabel(view: View, pkg: String?): String {
         if (pkg.isNullOrBlank()) return "未知来源"
@@ -42,21 +54,19 @@ class HistoryAdapter(
         }
     }
 
-    fun submit(list: List<ClipItem>) {
-        items.clear()
-        items.addAll(list)
-        notifyDataSetChanged()
-    }
+    /** 差异刷新入口（内部走 DiffUtil，增删/变更有动画，不再全表闪动） */
+    fun submit(list: List<ClipItem>) = submitList(list)
+
+    /** 供滑动操作按位置取条目 */
+    fun itemAt(position: Int): ClipItem = getItem(position)
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val view = LayoutInflater.from(parent.context).inflate(R.layout.item_clip, parent, false)
         return VH(view)
     }
 
-    override fun getItemCount(): Int = items.size
-
     override fun onBindViewHolder(holder: VH, position: Int) {
-        val item = items[position]
+        val item = getItem(position)
         // 收藏的记录：类型徽章变橙色带 ★，整条卡片浅金底色
         holder.type.text =
             if (item.favorite) "★${ClipType.label(item.type)}" else ClipType.label(item.type)

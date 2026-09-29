@@ -47,6 +47,7 @@ import com.clipditto.app.ui.DetailPreview
 import com.clipditto.app.ui.HistoryAdapter
 import com.clipditto.app.ui.ItemActionButtons
 import com.clipditto.app.ui.MainActivity
+import com.clipditto.app.ui.SwipeActions
 import com.clipditto.app.util.AppSettings
 import com.clipditto.app.util.FuzzySearch
 import com.clipditto.app.util.MediaFiles
@@ -742,6 +743,23 @@ class ClipboardService : Service() {
         recycler.adapter = adapter
         panelAdapter = adapter
         panelEmptyView = tvEmpty
+        // 滑动操作：右滑收藏，左滑直接删除（与面板长按菜单行为一致）
+        SwipeActions.attach(
+            recycler, adapter,
+            onFav = { item ->
+                scope.launch {
+                    repo.toggleFavorite(item)
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(
+                            this@ClipboardService,
+                            if (item.favorite) "已取消收藏" else "已收藏置顶",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            },
+            onDelete = { item -> showPanelDeleteConfirm(item) }
+        )
 
         view.findViewById<Button>(R.id.btnPanelClose).setOnClickListener { hidePanel() }
         view.findViewById<Button>(R.id.btnPanelApp).setOnClickListener {
@@ -944,6 +962,30 @@ class ClipboardService : Service() {
             dialog.show()
         }.onFailure {
             Toast.makeText(this, "$title：$message", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** 面板左滑删除确认：删除不可恢复（媒体文件一并删除），需二次确认 */
+    private fun showPanelDeleteConfirm(item: ClipItem) {
+        runCatching {
+            val themedCtx = ContextThemeWrapper(this, R.style.Theme_ClipDitto)
+            val dialog = android.app.AlertDialog.Builder(themedCtx)
+                .setMessage("删除这条记录？")
+                .setPositiveButton("删除") { _, _ ->
+                    scope.launch {
+                        repo.delete(item)
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(this@ClipboardService, "已删除", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+                .setNegativeButton("取消", null)
+                .create()
+            dialog.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+            dialog.show()
+            // 删除按钮红色强调
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+                ?.setTextColor(themedCtx.getColor(R.color.danger))
         }
     }
 
