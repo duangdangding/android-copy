@@ -1,5 +1,6 @@
 package com.clipditto.app.service
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.PendingIntent
@@ -290,6 +291,13 @@ class ClipboardService : Service() {
                 hidePanel()
                 return START_STICKY
             }
+            // 设置页调整了悬浮球大小/透明度、弹窗列表透明度：立即应用到已显示的悬浮窗
+            ACTION_REFRESH_APPEARANCE -> {
+                startForeground(NOTIFY_ID, buildNotification())
+                applyBallAppearance()
+                panelView?.alpha = AppSettings.getPanelAlpha(this) / 100f
+                return START_STICKY
+            }
         }
         startForeground(NOTIFY_ID, buildNotification())
         clipboard.addPrimaryClipChangedListener(clipListener)
@@ -568,6 +576,8 @@ class ClipboardService : Service() {
         view.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
+                    // 触摸即唤醒：取消闲置计时，若已贴边收缩则恢复原状
+                    undockBall()
                     downX = event.rawX; downY = event.rawY
                     startX = params.x; startY = params.y
                     moved = false
@@ -591,10 +601,13 @@ class ClipboardService : Service() {
                 MotionEvent.ACTION_UP -> {
                     handler.removeCallbacks(longPressHide)
                     if (!moved && ballView != null) togglePanel()
+                    // 松手后重新计时，闲置一段时间自动贴边收缩
+                    scheduleBallIdle()
                     true
                 }
                 MotionEvent.ACTION_CANCEL -> {
                     handler.removeCallbacks(longPressHide)
+                    scheduleBallIdle()
                     true
                 }
                 else -> false
@@ -604,6 +617,9 @@ class ClipboardService : Service() {
         ballView = view
         ballParams = params
         runCatching { wm.addView(view, params) }
+        // 应用外观设置（大小/透明度）并开启闲置收缩计时
+        applyBallAppearance()
+        scheduleBallIdle()
     }
 
     private var ballParams: WindowManager.LayoutParams? = null
@@ -619,9 +635,89 @@ class ClipboardService : Service() {
     }
 
     private fun hideBall() {
+        cancelBallIdle()
         ballView?.let { runCatching { wm.removeView(it) } }
         ballView = null
         ballParams = null
+    }
+
+    // ---------------- 悬浮球外观与闲置收缩 ----------------
+
+    /** 闲置收缩计时任务 */
+    private var ballIdleRunnable: Runnable? = null
+
+    /** 当前是否处于贴边收缩状态 */
+    private var ballDocked = false
+
+    /** 应用外观设置：悬浮球大小 + 透明度（设置页调整后经 refreshAppearance 触发） */
+    private fun applyBallAppearance() {
+        val view = ballView ?: return
+        val params = ballParams ?: return
+        val dm = resources.displayMetrics
+        val sizePx = (AppSettings.getBallSizeDp(this) * dm.density).toInt()
+        view.layoutParams.width = sizePx
+        view.layoutParams.height = sizePx
+        // 内边距随大小等比缩放（布局里 40dp 球配 9dp 内边距）
+        val pad = sizePx * 9 / 40
+        view.setPadding(pad, pad, pad, pad)
+        ballDocked = false
+        view.animate().cancel()
+        view.alpha = AppSettings.getBallAlpha(this) / 100f
+        runCatching { wm.updateViewLayout(view, params) }
+    }
+
+    /** 启动/重置闲置计时：3 秒无操作且面板未打开时，悬浮球自动贴边收缩 */
+    private fun scheduleBallIdle() {
+        cancelBallIdle()
+        if (ballView == null) return
+        val r = Runnable { dockBallToEdge() }
+        ballIdleRunnable = r
+        handler.postDelayed(r, 3000)
+    }
+
+    private fun cancelBallIdle() {
+        ballIdleRunnable?.let { handler.removeCallbacks(it) }
+        ballIdleRunnable = null
+    }
+
+    /** 触摸唤醒：取消闲置计时，若已收缩则恢复完整显示 */
+    private fun undockBall() {
+        cancelBallIdle()
+        val view = ballView ?: return
+        if (!ballDocked) return
+        ballDocked = false
+        view.animate().cancel()
+        view.animate()
+            .alpha(AppSettings.getBallAlpha(this) / 100f)
+            .setDuration(150)
+            .start()
+    }
+
+    /** 闲置后收缩：移到最近的屏幕边缘并降低透明度，减少遮挡 */
+    private fun dockBallToEdge() {
+        val view = ballView ?: return
+        val params = ballParams ?: return
+        // 面板打开时用户正在操作，不收缩
+        if (panelView != null) return
+        ballDocked = true
+        val dm = resources.displayMetrics
+        val w = view.width.takeIf { it > 0 }
+            ?: (AppSettings.getBallSizeDp(this) * dm.density).toInt()
+        // 只露出约 2/3 个球：左边缘往左藏 1/3，右边缘往右藏 1/3
+        val targetX = if (params.x + w / 2 < dm.widthPixels / 2) -w / 3
+        else dm.widthPixels - w * 2 / 3
+        view.animate()
+            .alpha(AppSettings.getBallAlpha(this) / 100f * 0.35f)
+            .setDuration(250)
+            .start()
+        ValueAnimator.ofInt(params.x, targetX).apply {
+            duration = 250
+            addUpdateListener { anim ->
+                params.x = anim.animatedValue as Int
+                runCatching { wm.updateViewLayout(view, params) }
+            }
+            start()
+        }
     }
 
     // ---------------- 悬浮面板 ----------------
@@ -634,6 +730,10 @@ class ClipboardService : Service() {
     private fun showPanel() {
         if (panelView != null || !Settings.canDrawOverlays(this)) return
         val view = LayoutInflater.from(this).inflate(R.layout.view_floating_panel, null)
+        // 弹窗列表整体透明度（设置页可调）
+        view.alpha = AppSettings.getPanelAlpha(this) / 100f
+        // 面板打开期间悬浮球保持完整显示，不做闲置收缩
+        cancelBallIdle()
 
         val dm = resources.displayMetrics
         val prefs = getSharedPreferences(BootReceiver.PREFS, Context.MODE_PRIVATE)
@@ -890,6 +990,8 @@ class ClipboardService : Service() {
         panelParams = null
         panelAdapter = null
         panelEmptyView = null
+        // 面板收起后恢复悬浮球闲置收缩计时
+        scheduleBallIdle()
     }
 
     /** 外部请求收起面板（如主界面打开时）；服务与界面同进程且都在主线程，直接移除悬浮窗 */
@@ -1128,6 +1230,7 @@ class ClipboardService : Service() {
         const val ACTION_STOP = "com.clipditto.app.action.STOP"
         const val ACTION_SHOW_BALL = "com.clipditto.app.action.SHOW_BALL"
         const val ACTION_HIDE_BALL = "com.clipditto.app.action.HIDE_BALL"
+        const val ACTION_REFRESH_APPEARANCE = "com.clipditto.app.action.REFRESH_APPEARANCE"
         private const val NOTIFY_ID = 1001
         private const val TAG = "ClipDitto"
         private const val KEY_LAST_HANDLED_SIG = "last_handled_sig"
@@ -1161,6 +1264,19 @@ class ClipboardService : Service() {
                 val action = if (visible) ACTION_SHOW_BALL else ACTION_HIDE_BALL
                 context.startService(
                     Intent(context, ClipboardService::class.java).setAction(action)
+                )
+            }
+        }
+
+        /**
+         * 设置页调整悬浮球大小/透明度、弹窗列表透明度后调用，
+         * 运行中的服务立即应用；服务未运行时下次显示悬浮窗自动生效。
+         */
+        fun refreshAppearance(context: Context) {
+            if (isRunning) {
+                context.startService(
+                    Intent(context, ClipboardService::class.java)
+                        .setAction(ACTION_REFRESH_APPEARANCE)
                 )
             }
         }

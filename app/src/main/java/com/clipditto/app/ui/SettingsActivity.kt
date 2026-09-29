@@ -5,8 +5,11 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.DocumentsContract
+import android.view.Gravity
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -78,6 +81,24 @@ class SettingsActivity : AppCompatActivity() {
             ).show()
         }
 
+        // ---- 悬浮球外观：大小 / 透明度 ----
+        findViewById<android.view.View>(R.id.rowBallSize).setOnClickListener {
+            val cur = AppSettings.getBallSizeDp(this)
+            showSliderDialog("悬浮球大小", 32, 64, cur, { "$it dp" }) { v ->
+                AppSettings.setBallSizeDp(this, v)
+                refreshBallSizeRow()
+                ClipboardService.refreshAppearance(this)
+            }
+        }
+        findViewById<android.view.View>(R.id.rowBallAlpha).setOnClickListener {
+            val cur = AppSettings.getBallAlpha(this)
+            showSliderDialog("悬浮球透明度", 30, 100, cur, { "$it%" }) { v ->
+                AppSettings.setBallAlpha(this, v)
+                refreshBallAlphaRow()
+                ClipboardService.refreshAppearance(this)
+            }
+        }
+
         // ---- 悬浮面板 ----
         findViewById<SwitchCompat>(R.id.swRememberPanelSize).setOnClickListener {
             val now = findViewById<SwitchCompat>(R.id.swRememberPanelSize).isChecked
@@ -87,6 +108,14 @@ class SettingsActivity : AppCompatActivity() {
                 if (now) "将记录调整后的弹窗列表大小" else "弹窗列表将始终使用默认大小",
                 Toast.LENGTH_SHORT
             ).show()
+        }
+        findViewById<android.view.View>(R.id.rowPanelAlpha).setOnClickListener {
+            val cur = AppSettings.getPanelAlpha(this)
+            showSliderDialog("弹窗列表透明度", 30, 100, cur, { "$it%" }) { v ->
+                AppSettings.setPanelAlpha(this, v)
+                refreshPanelAlphaRow()
+                ClipboardService.refreshAppearance(this)
+            }
         }
 
         // ---- 外观主题 ----
@@ -107,7 +136,10 @@ class SettingsActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refreshBallSwitch()
+        refreshBallSizeRow()
+        refreshBallAlphaRow()
         refreshPanelSwitch()
+        refreshPanelAlphaRow()
         refreshThemeRow()
         refreshMaxRecordsRow()
         refreshRetentionRow()
@@ -121,9 +153,64 @@ class SettingsActivity : AppCompatActivity() {
             AppSettings.isBallEnabled(this)
     }
 
+    private fun refreshBallSizeRow() {
+        findViewById<TextView>(R.id.tvBallSizeValue).text =
+            "${AppSettings.getBallSizeDp(this)} dp"
+    }
+
+    private fun refreshBallAlphaRow() {
+        findViewById<TextView>(R.id.tvBallAlphaValue).text =
+            "${AppSettings.getBallAlpha(this)}%"
+    }
+
     private fun refreshPanelSwitch() {
         findViewById<SwitchCompat>(R.id.swRememberPanelSize).isChecked =
             AppSettings.isRememberPanelSize(this)
+    }
+
+    private fun refreshPanelAlphaRow() {
+        findViewById<TextView>(R.id.tvPanelAlphaValue).text =
+            "${AppSettings.getPanelAlpha(this)}%"
+    }
+
+    /** 滑杆弹窗：拖动实时预览数值，确定后回调应用 */
+    private fun showSliderDialog(
+        title: String,
+        min: Int,
+        max: Int,
+        current: Int,
+        format: (Int) -> String,
+        onApply: (Int) -> Unit
+    ) {
+        val pad = (24 * resources.displayMetrics.density).toInt()
+        val tvValue = TextView(this).apply {
+            text = format(current)
+            textSize = 16f
+            gravity = Gravity.CENTER
+        }
+        val seek = SeekBar(this).apply {
+            this.max = max - min
+            progress = current - min
+        }
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
+                tvValue.text = format(min + p)
+            }
+            override fun onStartTrackingTouch(s: SeekBar?) {}
+            override fun onStopTrackingTouch(s: SeekBar?) {}
+        })
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+            addView(tvValue)
+            addView(seek)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(container)
+            .setPositiveButton("确定") { _, _ -> onApply(min + seek.progress) }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     // ---------------- 外观主题 ----------------

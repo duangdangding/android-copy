@@ -25,6 +25,28 @@ object AppSettings {
         prefs(context).edit().putBoolean(KEY_BALL_ENABLED, enabled).apply()
     }
 
+    // ---------------- 悬浮球外观 ----------------
+
+    private const val KEY_BALL_SIZE_DP = "ball_size_dp"
+
+    /** 悬浮球边长（dp），默认 40，范围 32~64 */
+    fun getBallSizeDp(context: Context): Int =
+        prefs(context).getInt(KEY_BALL_SIZE_DP, 40)
+
+    fun setBallSizeDp(context: Context, dp: Int) {
+        prefs(context).edit().putInt(KEY_BALL_SIZE_DP, dp.coerceIn(32, 64)).apply()
+    }
+
+    private const val KEY_BALL_ALPHA = "ball_alpha"
+
+    /** 悬浮球透明度（百分比 30~100），默认 100 不透明 */
+    fun getBallAlpha(context: Context): Int =
+        prefs(context).getInt(KEY_BALL_ALPHA, 100)
+
+    fun setBallAlpha(context: Context, percent: Int) {
+        prefs(context).edit().putInt(KEY_BALL_ALPHA, percent.coerceIn(30, 100)).apply()
+    }
+
     // ---------------- 悬浮面板 ----------------
 
     private const val KEY_REMEMBER_PANEL_SIZE = "remember_panel_size"
@@ -35,6 +57,16 @@ object AppSettings {
 
     fun setRememberPanelSize(context: Context, remember: Boolean) {
         prefs(context).edit().putBoolean(KEY_REMEMBER_PANEL_SIZE, remember).apply()
+    }
+
+    private const val KEY_PANEL_ALPHA = "panel_alpha"
+
+    /** 弹窗列表透明度（百分比 30~100），默认 100 不透明 */
+    fun getPanelAlpha(context: Context): Int =
+        prefs(context).getInt(KEY_PANEL_ALPHA, 100)
+
+    fun setPanelAlpha(context: Context, percent: Int) {
+        prefs(context).edit().putInt(KEY_PANEL_ALPHA, percent.coerceIn(30, 100)).apply()
     }
 
     // ---------------- 外观主题 ----------------
