@@ -2,29 +2,33 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginBottom="8dp"
-    android:background="@drawable/bg_item"
+    android:layout_marginHorizontal="4dp"
+    android:layout_marginBottom="10dp"
+    android:background="@drawable/bg_item_ripple"
     android:gravity="center_vertical"
     android:orientation="horizontal"
-    android:padding="10dp">
+    android:padding="12dp">
 
     <TextView
         android:id="@+id/tvType"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginEnd="8dp"
-        android:background="@drawable/bg_ball"
-        android:paddingHorizontal="6dp"
+        android:layout_marginEnd="10dp"
+        android:background="@drawable/bg_badge"
+        android:paddingHorizontal="7dp"
         android:paddingVertical="2dp"
         android:text="文"
         android:textColor="@color/white"
-        android:textSize="12sp" />
+        android:textSize="12sp"
+        android:textStyle="bold" />
 
     <ImageView
         android:id="@+id/ivThumb"
         android:layout_width="56dp"
         android:layout_height="56dp"
-        android:layout_marginEnd="8dp"
+        android:layout_marginEnd="10dp"
+        android:background="@drawable/bg_thumb_round"
+        android:clipToOutline="true"
         android:scaleType="centerCrop"
         android:visibility="gone" />
 

@@ -16,4 +16,11 @@
     <!-- 功能色 -->
     <color name="accent_link">#FFCE93D8</color>
     <color name="danger">#FFCF6679</color>
+    <!-- 列表类型徽章底色：暗色下用更亮的变体保证对比度 -->
+    <color name="badge_text">#FF9575CD</color>
+    <color name="badge_image">#FF66BB6A</color>
+    <color name="badge_file">#FF42A5F5</color>
+    <color name="badge_video">#FFFFA726</color>
+    <color name="badge_audio">#FF26A69A</color>
+    <color name="badge_fav">#FFFFB300</color>
 </resources>

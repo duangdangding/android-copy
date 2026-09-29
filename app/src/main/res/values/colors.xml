@@ -24,4 +24,11 @@
     <!-- 功能色 -->
     <color name="accent_link">#FF7B1FA2</color>
     <color name="danger">#FFB00020</color>
+    <!-- 列表类型徽章底色（文字/图片/文件/视频/音频/收藏） -->
+    <color name="badge_text">#FF6750A4</color>
+    <color name="badge_image">#FF43A047</color>
+    <color name="badge_file">#FF1E88E5</color>
+    <color name="badge_video">#FFEF6C00</color>
+    <color name="badge_audio">#FF00897B</color>
+    <color name="badge_fav">#FFF59E0B</color>
 </resources>

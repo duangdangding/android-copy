@@ -1,5 +1,6 @@
 package com.clipditto.app.ui
 
+import android.content.res.ColorStateList
 import android.graphics.BitmapFactory
 import android.graphics.Typeface
 import android.media.MediaMetadataRetriever
@@ -120,14 +121,28 @@ class HistoryAdapter(
 
     override fun onBindViewHolder(holder: VH, position: Int) {
         val item = getItem(position)
-        // 收藏的记录：类型徽章变橙色带 ★，整条卡片浅金底色
+        // 收藏的记录：类型徽章变琥珀色带 ★，整条卡片浅金底色；
+        // 普通记录：徽章按类型着色（文字紫/图片绿/文件蓝/视频橙/音频青）
         holder.type.text =
             if (item.favorite) "★${ClipType.label(item.type)}" else ClipType.label(item.type)
-        holder.type.setBackgroundResource(
-            if (item.favorite) R.drawable.bg_badge_fav else R.drawable.bg_ball
-        )
+        if (item.favorite) {
+            holder.type.setBackgroundResource(R.drawable.bg_badge_fav)
+            holder.type.backgroundTintList = null
+        } else {
+            holder.type.setBackgroundResource(R.drawable.bg_badge)
+            val badgeColor = when (item.type) {
+                ClipType.IMAGE -> R.color.badge_image
+                ClipType.FILE -> R.color.badge_file
+                ClipType.VIDEO -> R.color.badge_video
+                ClipType.AUDIO -> R.color.badge_audio
+                else -> R.color.badge_text
+            }
+            holder.type.backgroundTintList = ColorStateList.valueOf(
+                ContextCompat.getColor(holder.itemView.context, badgeColor)
+            )
+        }
         holder.itemView.setBackgroundResource(
-            if (item.favorite) R.drawable.bg_item_fav else R.drawable.bg_item
+            if (item.favorite) R.drawable.bg_item_fav_ripple else R.drawable.bg_item_ripple
         )
         holder.content.text = highlightMatches(item.text ?: "(无预览)", holder.itemView)
         holder.time.text = timeFormat.format(Date(item.timestamp))

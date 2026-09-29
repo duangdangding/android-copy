@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 列表缩略图圆角轮廓：配合 clipToOutline 裁出圆角 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/divider" />
+    <corners android:radius="8dp" />
+</shape>
