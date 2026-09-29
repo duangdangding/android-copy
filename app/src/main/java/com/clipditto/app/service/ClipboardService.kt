@@ -636,9 +636,18 @@ class ClipboardService : Service() {
 
     private fun hideBall() {
         cancelBallIdle()
-        ballView?.let { runCatching { wm.removeView(it) } }
+        val view = ballView
         ballView = null
         ballParams = null
+        // 淡出后移除，避免一闪而没
+        if (view != null) {
+            view.animate().cancel()
+            view.animate()
+                .alpha(0f)
+                .setDuration(150)
+                .withEndAction { runCatching { wm.removeView(view) } }
+                .start()
+        }
     }
 
     // ---------------- 悬浮球外观与闲置收缩 ----------------
@@ -732,6 +741,8 @@ class ClipboardService : Service() {
         val view = LayoutInflater.from(this).inflate(R.layout.view_floating_panel, null)
         // 弹窗列表整体透明度（设置页可调）
         view.alpha = AppSettings.getPanelAlpha(this) / 100f
+        // 按圆角背景轮廓投射柔和阴影，浮起感更强
+        view.elevation = 12 * resources.displayMetrics.density
         // 面板打开期间悬浮球保持完整显示，不做闲置收缩
         cancelBallIdle()
 
@@ -917,6 +928,29 @@ class ClipboardService : Service() {
         runCatching { wm.addView(view, params) }
         // 保证悬浮球永远在面板之上
         bringBallToFront()
+        // 入场动画：从悬浮球位置放大展开
+        run {
+            val targetAlpha = AppSettings.getPanelAlpha(this) / 100f
+            val ball = ballView
+            val bp = ballParams
+            if (ball != null && bp != null) {
+                // 缩放轴心对准悬浮球中心（相对面板左上角）
+                val bw = ball.width.takeIf { it > 0 }
+                    ?: (AppSettings.getBallSizeDp(this) * dm.density).toInt()
+                view.pivotX = (bp.x + bw / 2f - params.x).coerceIn(0f, params.width.toFloat())
+                view.pivotY = (bp.y + bw / 2f - params.y).coerceAtLeast(0f)
+            }
+            view.alpha = 0f
+            view.scaleX = 0.7f
+            view.scaleY = 0.7f
+            view.animate()
+                .alpha(targetAlpha)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(220)
+                .setInterpolator(android.view.animation.OvershootInterpolator(1.1f))
+                .start()
+        }
         // 面板打开后主动读一次剪贴板（走 1px 聚焦悬浮窗），把监听可能漏掉的内容补进来；
         // 暂停监听时不读取；暂停期间复制过内容则把当前剪贴板设为基线，不补录
         handler.postDelayed({
@@ -982,14 +1016,29 @@ class ClipboardService : Service() {
         }
     }
 
-    private fun hidePanel() {
+    private fun hidePanel(animate: Boolean = true) {
         panelFlowJob?.cancel()
         panelFlowJob = null
-        panelView?.let { runCatching { wm.removeView(it) } }
+        val view = panelView
+        // 先清空引用，动画期间重复调用不会重复移除
         panelView = null
         panelParams = null
         panelAdapter = null
         panelEmptyView = null
+        if (view != null) {
+            if (animate) {
+                view.animate().cancel()
+                view.animate()
+                    .alpha(0f)
+                    .scaleX(0.92f)
+                    .scaleY(0.92f)
+                    .setDuration(140)
+                    .withEndAction { runCatching { wm.removeView(view) } }
+                    .start()
+            } else {
+                runCatching { wm.removeView(view) }
+            }
+        }
         // 面板收起后恢复悬浮球闲置收缩计时
         scheduleBallIdle()
     }

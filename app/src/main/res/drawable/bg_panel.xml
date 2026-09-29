@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
     <solid android:color="@color/panel_bg" />
-    <corners android:radius="16dp" />
+    <corners android:radius="20dp" />
+    <!-- 浅色模式下给面板一圈细描边，与背景拉开层次 -->
+    <stroke android:width="0.5dp" android:color="@color/divider" />
 </shape>
