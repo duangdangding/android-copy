@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 按钮已压缩为 5 行小按钮，顶部控制区完全展开不再滚动；
+<!-- 主页：Toolbar（标题 + 低频操作菜单）+ 状态区 + 高频开关（监听/悬浮球）；
      搜索框与列表占据下方剩余空间 -->
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -11,9 +11,11 @@
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
         android:background="@color/purple_500"
+        android:theme="@style/ToolbarTheme"
         android:title="@string/app_name"
         android:titleTextColor="@color/white"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="parent"
+        app:menu="@menu/menu_main" />
 
     <LinearLayout
         android:id="@+id/header"
@@ -22,163 +24,58 @@
         android:orientation="vertical"
         app:layout_constraintTop_toBottomOf="@+id/toolbar">
 
-            <TextView
-                android:id="@+id/tvStatus"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingHorizontal="12dp"
-                android:paddingVertical="6dp"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp" />
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="12dp"
+            android:paddingTop="8dp"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
 
-            <TextView
-                android:id="@+id/tvStorage"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingHorizontal="12dp"
-                android:paddingBottom="6dp"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp" />
+        <TextView
+            android:id="@+id/tvStorage"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="12dp"
+            android:paddingBottom="6dp"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
 
-            <!-- 无障碍开启引导已合并到顶部状态栏（点我开启），此按钮已移除 -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="2dp">
-
-                <Button
-                    android:id="@+id/btnToggleListen"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="4dp"
-                    android:insetTop="@dimen/main_btn_inset_v"
-                    android:insetBottom="@dimen/main_btn_inset_v"
-                    android:minHeight="@dimen/main_btn_min_h"
-                    android:singleLine="true"
-                    android:text="开启监听"
-                    android:textSize="@dimen/main_btn_text_size" />
-
-                <Button
-                    android:id="@+id/btnToggleBall"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="4dp"
-                    android:insetTop="@dimen/main_btn_inset_v"
-                    android:insetBottom="@dimen/main_btn_inset_v"
-                    android:minHeight="@dimen/main_btn_min_h"
-                    android:singleLine="true"
-                    android:text="悬浮球：开"
-                    android:textSize="@dimen/main_btn_text_size" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="2dp">
-
-                <Button
-                    android:id="@+id/btnSettings"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="4dp"
-                    android:insetTop="@dimen/main_btn_inset_v"
-                    android:insetBottom="@dimen/main_btn_inset_v"
-                    android:minHeight="@dimen/main_btn_min_h"
-                    android:singleLine="true"
-                    android:text="设置"
-                    android:textSize="@dimen/main_btn_text_size" />
-
-                <Button
-                    android:id="@+id/btnAbout"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="4dp"
-                    android:insetTop="@dimen/main_btn_inset_v"
-                    android:insetBottom="@dimen/main_btn_inset_v"
-                    android:minHeight="@dimen/main_btn_min_h"
-                    android:singleLine="true"
-                    android:text="关于"
-                    android:textSize="@dimen/main_btn_text_size" />
-            </LinearLayout>
+        <!-- 高频开关：监听 + 悬浮球（低频操作已收进 Toolbar 菜单） -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="2dp">
 
             <Button
-                android:id="@+id/btnShizuku"
-                android:layout_width="match_parent"
+                android:id="@+id/btnToggleListen"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginHorizontal="8dp"
-                android:insetTop="@dimen/main_btn_inset_v"
-                android:insetBottom="@dimen/main_btn_inset_v"
-                android:minHeight="@dimen/main_btn_min_h"
-                android:text="Shizuku 免打扰读取：检测中…"
-                android:textSize="@dimen/main_btn_text_size" />
-
-            <Button
-                android:id="@+id/btnLanSync"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginHorizontal="8dp"
-                android:layout_marginVertical="2dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
                 android:insetTop="@dimen/main_btn_inset_v"
                 android:insetBottom="@dimen/main_btn_inset_v"
                 android:minHeight="@dimen/main_btn_min_h"
                 android:singleLine="true"
-                android:text="设备同步"
+                android:text="开启监听"
                 android:textSize="@dimen/main_btn_text_size" />
 
-            <LinearLayout
-                android:layout_width="match_parent"
+            <Button
+                android:id="@+id/btnToggleBall"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="2dp">
-
-                <Button
-                    android:id="@+id/btnDeleteRange"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="4dp"
-                    android:insetTop="@dimen/main_btn_inset_v"
-                    android:insetBottom="@dimen/main_btn_inset_v"
-                    android:minHeight="@dimen/main_btn_min_h"
-                    android:singleLine="true"
-                    android:text="按时间删除"
-                    android:textSize="@dimen/main_btn_text_size" />
-
-                <Button
-                    android:id="@+id/btnBackup"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginHorizontal="4dp"
-                    android:insetTop="@dimen/main_btn_inset_v"
-                    android:insetBottom="@dimen/main_btn_inset_v"
-                    android:minHeight="@dimen/main_btn_min_h"
-                    android:singleLine="true"
-                    android:text="备份"
-                    android:textSize="@dimen/main_btn_text_size" />
-
-                <Button
-                    android:id="@+id/btnImport"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="4dp"
-                    android:insetTop="@dimen/main_btn_inset_v"
-                    android:insetBottom="@dimen/main_btn_inset_v"
-                    android:minHeight="@dimen/main_btn_min_h"
-                    android:singleLine="true"
-                    android:text="导入"
-                    android:textSize="@dimen/main_btn_text_size" />
-            </LinearLayout>
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:insetTop="@dimen/main_btn_inset_v"
+                android:insetBottom="@dimen/main_btn_inset_v"
+                android:minHeight="@dimen/main_btn_min_h"
+                android:singleLine="true"
+                android:text="悬浮球：开"
+                android:textSize="@dimen/main_btn_text_size" />
+        </LinearLayout>
     </LinearLayout>
 
     <!-- 搜索框固定在列表上方 -->

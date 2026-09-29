@@ -7,6 +7,11 @@
         <item name="android:statusBarColor">@color/purple_700</item>
     </style>
 
+    <!-- 主页 Toolbar：紫色底上白色菜单图标与弹出菜单 -->
+    <style name="ToolbarTheme" parent="ThemeOverlay.Material3.Dark">
+        <item name="android:textColorSecondary">@color/white</item>
+    </style>
+
     <!-- 设置页：分节标题 -->
     <style name="SettingsSectionTitle">
         <item name="android:layout_width">match_parent</item>

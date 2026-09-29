@@ -28,6 +28,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.clipditto.app.BuildConfig
 import com.clipditto.app.R
 import com.clipditto.app.backup.BackupManager
+import com.google.android.material.appbar.MaterialToolbar
 import com.clipditto.app.data.ClipItem
 import com.clipditto.app.data.ClipRepository
 import com.clipditto.app.data.ClipType
@@ -121,20 +122,27 @@ class MainActivity : AppCompatActivity() {
 
         btnListen.setOnClickListener { toggleListen() }
         btnBall.setOnClickListener { toggleBall() }
-        // 无障碍开启入口已合并到顶部状态栏（tvStatus 点我开启）
-        findViewById<Button>(R.id.btnDeleteRange).setOnClickListener { showDeleteRangeDialog() }
-        findViewById<Button>(R.id.btnBackup).setOnClickListener { onBackupClick() }
-        findViewById<Button>(R.id.btnImport).setOnClickListener {
-            importLauncher.launch(arrayOf("application/zip", "application/octet-stream"))
-        }
-        findViewById<Button>(R.id.btnLanSync).setOnClickListener {
-            startActivity(Intent(this, DevicesActivity::class.java))
-        }
-        findViewById<Button>(R.id.btnSettings).setOnClickListener {
-            startActivity(Intent(this, SettingsActivity::class.java))
-        }
-        findViewById<Button>(R.id.btnAbout).setOnClickListener {
-            startActivity(Intent(this, AboutActivity::class.java))
+        // 无障碍开启入口已合并到顶部状态栏（tvStatus 点我开启）；
+        // Shizuku / 设备同步 / 删除 / 备份 / 导入 / 设置 / 关于 收进 Toolbar 菜单
+        findViewById<MaterialToolbar>(R.id.toolbar).setOnMenuItemClickListener { menuItem ->
+            when (menuItem.itemId) {
+                R.id.action_shizuku -> { onShizukuClick(); true }
+                R.id.action_devices -> {
+                    startActivity(Intent(this, DevicesActivity::class.java)); true
+                }
+                R.id.action_delete_range -> { showDeleteRangeDialog(); true }
+                R.id.action_backup -> { onBackupClick(); true }
+                R.id.action_import -> {
+                    importLauncher.launch(arrayOf("application/zip", "application/octet-stream")); true
+                }
+                R.id.action_settings -> {
+                    startActivity(Intent(this, SettingsActivity::class.java)); true
+                }
+                R.id.action_about -> {
+                    startActivity(Intent(this, AboutActivity::class.java)); true
+                }
+                else -> false
+            }
         }
 
         // 静默检查更新：每个进程只自动查一次，无新版/失败都不打扰
@@ -143,7 +151,6 @@ class MainActivity : AppCompatActivity() {
             checkUpdateSilently()
         }
 
-        findViewById<Button>(R.id.btnShizuku).setOnClickListener { onShizukuClick() }
         Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
 
         requestNotificationPermissionIfNeeded()
@@ -168,8 +175,10 @@ class MainActivity : AppCompatActivity() {
 
     // ---------------- Shizuku 免打扰读取 ----------------
 
+    /** Shizuku 状态实时显示在 Toolbar 菜单项标题上 */
     private fun refreshShizukuButton() {
-        findViewById<Button>(R.id.btnShizuku).text = when {
+        findViewById<MaterialToolbar>(R.id.toolbar)
+            .menu.findItem(R.id.action_shizuku)?.title = when {
             !ShizukuClipboard.isServerRunning() ->
                 "Shizuku 免打扰读取：服务未运行（点击打开）"
             !ShizukuClipboard.isPermissionGranted() ->

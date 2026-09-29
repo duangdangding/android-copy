@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 主页 Toolbar 菜单：低频操作入口（高频的监听/悬浮球开关保留在页面上）。
+     Shizuku 项的标题由 MainActivity.refreshShizukuButton 动态更新 -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/action_shizuku"
+        android:menuCategory="container"
+        android:title="Shizuku 免打扰读取：检测中…" />
+
+    <item
+        android:id="@+id/action_devices"
+        android:menuCategory="container"
+        android:title="设备同步" />
+
+    <item
+        android:id="@+id/action_delete_range"
+        android:menuCategory="container"
+        android:title="按时间删除" />
+
+    <item
+        android:id="@+id/action_backup"
+        android:menuCategory="container"
+        android:title="备份" />
+
+    <item
+        android:id="@+id/action_import"
+        android:menuCategory="container"
+        android:title="导入" />
+
+    <item
+        android:id="@+id/action_settings"
+        android:menuCategory="system"
+        android:title="设置" />
+
+    <item
+        android:id="@+id/action_about"
+        android:menuCategory="system"
+        android:title="关于" />
+</menu>
