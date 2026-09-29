@@ -1027,6 +1027,7 @@ class ClipboardService : Service() {
         panelFlowJob?.cancel()
         panelFlowJob = null
         val view = panelView
+        val pp = panelParams
         // 先清空引用，动画期间重复调用不会重复移除
         panelView = null
         panelParams = null
@@ -1034,13 +1035,26 @@ class ClipboardService : Service() {
         panelEmptyView = null
         if (view != null) {
             if (animate) {
+                // 收起动画只做缩小、不做透明度渐变：overlay 窗口根视图做 alpha 动画
+                // 会被提升为硬件合成层，部分 ROM 在动画结束拆层时闪一帧。
+                // 轴心对准悬浮球，视觉上"缩回球里"
+                val ball = ballView
+                val bp = ballParams
+                if (ball != null && bp != null && pp != null) {
+                    val bw = ball.width.takeIf { it > 0 } ?: view.width
+                    view.pivotX = (bp.x + bw / 2f - pp.x).coerceIn(0f, view.width.toFloat())
+                    view.pivotY = (bp.y + bw / 2f - pp.y).coerceAtLeast(0f)
+                }
                 view.animate().cancel()
                 view.animate()
-                    .alpha(0f)
-                    .scaleX(0.92f)
-                    .scaleY(0.92f)
-                    .setDuration(140)
-                    .withEndAction { runCatching { wm.removeView(view) } }
+                    .scaleX(0.6f)
+                    .scaleY(0.6f)
+                    .setDuration(150)
+                    .withEndAction {
+                        // 先隐藏再移除，避免最后一帧没渲染上导致闪一下
+                        view.visibility = View.GONE
+                        runCatching { wm.removeView(view) }
+                    }
                     .start()
             } else {
                 runCatching { wm.removeView(view) }
