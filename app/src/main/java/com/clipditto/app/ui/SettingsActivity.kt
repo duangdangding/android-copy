@@ -81,22 +81,26 @@ class SettingsActivity : AppCompatActivity() {
             ).show()
         }
 
-        // ---- 悬浮球外观：大小 / 透明度 ----
+        // ---- 悬浮球外观：大小 / 透明度（拖动滑杆实时预览） ----
         findViewById<android.view.View>(R.id.rowBallSize).setOnClickListener {
             val cur = AppSettings.getBallSizeDp(this)
-            showSliderDialog("悬浮球大小", 32, 64, cur, { "$it dp" }) { v ->
-                AppSettings.setBallSizeDp(this, v)
-                refreshBallSizeRow()
-                ClipboardService.refreshAppearance(this)
-            }
+            showSliderDialog("悬浮球大小", 32, 64, cur, { "$it dp" },
+                onLive = { v ->
+                    AppSettings.setBallSizeDp(this, v)
+                    ClipboardService.refreshAppearance(this)
+                },
+                onDone = { refreshBallSizeRow() }
+            )
         }
         findViewById<android.view.View>(R.id.rowBallAlpha).setOnClickListener {
             val cur = AppSettings.getBallAlpha(this)
-            showSliderDialog("悬浮球透明度", 30, 100, cur, { "$it%" }) { v ->
-                AppSettings.setBallAlpha(this, v)
-                refreshBallAlphaRow()
-                ClipboardService.refreshAppearance(this)
-            }
+            showSliderDialog("悬浮球透明度", 30, 100, cur, { "$it%" },
+                onLive = { v ->
+                    AppSettings.setBallAlpha(this, v)
+                    ClipboardService.refreshAppearance(this)
+                },
+                onDone = { refreshBallAlphaRow() }
+            )
         }
 
         // ---- 悬浮面板 ----
@@ -111,11 +115,13 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<android.view.View>(R.id.rowPanelAlpha).setOnClickListener {
             val cur = AppSettings.getPanelAlpha(this)
-            showSliderDialog("弹窗列表透明度", 30, 100, cur, { "$it%" }) { v ->
-                AppSettings.setPanelAlpha(this, v)
-                refreshPanelAlphaRow()
-                ClipboardService.refreshAppearance(this)
-            }
+            showSliderDialog("弹窗列表透明度", 30, 100, cur, { "$it%" },
+                onLive = { v ->
+                    AppSettings.setPanelAlpha(this, v)
+                    ClipboardService.refreshAppearance(this)
+                },
+                onDone = { refreshPanelAlphaRow() }
+            )
         }
 
         // ---- 外观主题 ----
@@ -173,14 +179,18 @@ class SettingsActivity : AppCompatActivity() {
             "${AppSettings.getPanelAlpha(this)}%"
     }
 
-    /** 滑杆弹窗：拖动实时预览数值，确定后回调应用 */
+    /**
+     * 滑杆弹窗：拖动时实时应用（onLive），悬浮球/面板立即跟着变；
+     * 取消或点弹窗外区域则恢复原值，确定保留当前值；结束后回调 onDone 刷新行显示。
+     */
     private fun showSliderDialog(
         title: String,
         min: Int,
         max: Int,
         current: Int,
         format: (Int) -> String,
-        onApply: (Int) -> Unit
+        onLive: (Int) -> Unit,
+        onDone: () -> Unit
     ) {
         val pad = (24 * resources.displayMetrics.density).toInt()
         val tvValue = TextView(this).apply {
@@ -195,6 +205,7 @@ class SettingsActivity : AppCompatActivity() {
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
                 tvValue.text = format(min + p)
+                if (fromUser) onLive(min + p)
             }
             override fun onStartTrackingTouch(s: SeekBar?) {}
             override fun onStopTrackingTouch(s: SeekBar?) {}
@@ -208,8 +219,19 @@ class SettingsActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle(title)
             .setView(container)
-            .setPositiveButton("确定") { _, _ -> onApply(min + seek.progress) }
-            .setNegativeButton("取消", null)
+            .setPositiveButton("确定") { _, _ ->
+                onLive(min + seek.progress)
+                onDone()
+            }
+            .setNegativeButton("取消") { _, _ ->
+                onLive(current)
+                onDone()
+            }
+            // 返回键/点弹窗外关闭也视为取消，恢复原值
+            .setOnCancelListener {
+                onLive(current)
+                onDone()
+            }
             .show()
     }
 
