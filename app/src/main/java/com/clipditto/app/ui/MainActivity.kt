@@ -29,6 +29,7 @@ import com.clipditto.app.BuildConfig
 import com.clipditto.app.R
 import com.clipditto.app.backup.BackupManager
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.snackbar.Snackbar
 import com.clipditto.app.data.ClipItem
 import com.clipditto.app.data.ClipRepository
 import com.clipditto.app.data.ClipType
@@ -67,8 +68,9 @@ class MainActivity : AppCompatActivity() {
     private var allClips: List<ClipItem> = emptyList()
     private var query: String = ""
 
-    /** 按搜索词过滤主界面列表（模糊匹配） */
+    /** 按搜索词过滤主界面列表（模糊匹配），命中字符在列表里高亮 */
     private fun applyFilter() {
+        adapter.highlightQuery = query.trim()
         val filtered = allClips.filter { FuzzySearch.matches(query, it.text) }
         adapter.submit(filtered)
         tvEmpty.text = if (query.isBlank())
@@ -124,7 +126,9 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             repo.clips.collectLatest { list ->
-                allClips = list
+                // 撤销窗口内的待删条目即使被 flow 重新下发也不再显示
+                val pendingId = pendingDelete?.first?.id
+                allClips = if (pendingId == null) list else list.filter { it.id != pendingId }
                 applyFilter()
                 refreshStorage()   // 增删记录后同步刷新占用统计
             }
@@ -185,6 +189,8 @@ class MainActivity : AppCompatActivity() {
         }
 
     override fun onDestroy() {
+        // 退出页面时还在撤销窗口内的待删条目立即落库删除
+        flushPendingDelete()
         Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
         super.onDestroy()
     }
@@ -466,17 +472,50 @@ class MainActivity : AppCompatActivity() {
     private fun confirmDeleteItem(item: ClipItem) {
         val dialog = AlertDialog.Builder(this)
             .setMessage("删除这条记录？")
-            .setPositiveButton("删除") { _, _ ->
-                lifecycleScope.launch {
-                    repo.delete(item)
-                    Toast.makeText(this@MainActivity, "已删除", Toast.LENGTH_SHORT).show()
-                }
-            }
+            .setPositiveButton("删除") { _, _ -> deleteWithUndo(item) }
             .setNegativeButton("取消", null)
             .show()
         // 删除按钮红色强调
         dialog.getButton(AlertDialog.BUTTON_POSITIVE)
             ?.setTextColor(getColor(R.color.danger))
+    }
+
+    // ---------------- 删除（可撤销） ----------------
+
+    /** 已确认删除但还在撤销窗口内的条目（含原位置）；超时后才真正删除（含媒体文件） */
+    private var pendingDelete: Pair<ClipItem, Int>? = null
+
+    /** 列表先移除并给出撤销入口；Snackbar 超时/被打断后才真正落库删除 */
+    private fun deleteWithUndo(item: ClipItem) {
+        // 上一条还在撤销窗口内的记录立即真正删除，避免积压
+        flushPendingDelete()
+        val index = allClips.indexOfFirst { it.id == item.id }
+        if (index < 0) return
+        pendingDelete = item to index
+        allClips = allClips.toMutableList().also { it.removeAt(index) }
+        applyFilter()
+        Snackbar.make(findViewById(R.id.recycler), "已删除", Snackbar.LENGTH_LONG)
+            .setAction("撤销") {
+                val (pending, idx) = pendingDelete ?: return@setAction
+                pendingDelete = null
+                allClips = allClips.toMutableList()
+                    .also { it.add(idx.coerceAtMost(it.size), pending) }
+                applyFilter()
+            }
+            .addCallback(object : Snackbar.Callback() {
+                override fun onDismissed(sb: Snackbar?, event: Int) {
+                    // 点「撤销」关闭的不落库；超时或滑走才真正删除
+                    if (event != Snackbar.Callback.DISMISS_EVENT_ACTION) flushPendingDelete()
+                }
+            })
+            .show()
+    }
+
+    /** 撤销窗口结束，真正删除待删条目 */
+    private fun flushPendingDelete() {
+        val (item, _) = pendingDelete ?: return
+        pendingDelete = null
+        lifecycleScope.launch { repo.delete(item) }
     }
 
     // ---------------- 按时间段删除 ----------------

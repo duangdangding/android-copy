@@ -1,13 +1,19 @@
 package com.clipditto.app.ui
 
 import android.graphics.BitmapFactory
+import android.graphics.Typeface
 import android.media.MediaMetadataRetriever
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
@@ -29,6 +35,9 @@ class HistoryAdapter(
     private val timeFormat = SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault())
     /** 包名 -> 应用名 缓存 */
     private val labelCache = HashMap<String, String>()
+
+    /** 当前搜索词：非空时列表内容里命中的字符加粗标色 */
+    var highlightQuery: String = ""
 
     companion object {
         /** 记录 id 定位条目，数据类 equals 判断内容变化（收藏/时间戳等） */
@@ -54,6 +63,50 @@ class HistoryAdapter(
         }
     }
 
+    /**
+     * 搜索命中高亮：与 FuzzySearch 规则一致——
+     * 包含匹配标出所有出现片段；否则按子序列贪心命中逐字标出。
+     */
+    private fun highlightMatches(text: String, view: View): CharSequence {
+        val q = highlightQuery.trim().lowercase()
+        if (q.isEmpty()) return text
+        val lower = text.lowercase()
+        val hit = BooleanArray(text.length)
+        var any = false
+        var from = lower.indexOf(q)
+        if (from >= 0) {
+            // 包含匹配：标出所有出现位置
+            while (from >= 0) {
+                for (k in from until from + q.length) hit[k] = true
+                any = true
+                from = lower.indexOf(q, from + q.length)
+            }
+        } else {
+            // 子序列匹配：贪心顺序标出命中字符
+            var qi = 0
+            for (i in lower.indices) {
+                if (qi < q.length && lower[i] == q[qi]) {
+                    hit[i] = true
+                    qi++
+                    any = true
+                }
+            }
+        }
+        if (!any) return text
+        val spannable = SpannableString(text)
+        val color = ContextCompat.getColor(view.context, R.color.accent_link)
+        var i = 0
+        while (i < hit.size) {
+            if (!hit[i]) { i++; continue }
+            var j = i
+            while (j < hit.size && hit[j]) j++
+            spannable.setSpan(ForegroundColorSpan(color), i, j, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            spannable.setSpan(StyleSpan(Typeface.BOLD), i, j, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            i = j
+        }
+        return spannable
+    }
+
     /** 差异刷新入口（内部走 DiffUtil，增删/变更有动画，不再全表闪动） */
     fun submit(list: List<ClipItem>) = submitList(list)
 
@@ -76,7 +129,7 @@ class HistoryAdapter(
         holder.itemView.setBackgroundResource(
             if (item.favorite) R.drawable.bg_item_fav else R.drawable.bg_item
         )
-        holder.content.text = item.text ?: "(无预览)"
+        holder.content.text = highlightMatches(item.text ?: "(无预览)", holder.itemView)
         holder.time.text = timeFormat.format(Date(item.timestamp))
         holder.source.text = "来自 ${sourceLabel(holder.itemView, item.sourceApp)}"
 

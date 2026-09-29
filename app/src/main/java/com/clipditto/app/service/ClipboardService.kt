@@ -1008,6 +1008,7 @@ class ClipboardService : Service() {
 
     /** 按搜索词过滤面板列表（模糊匹配） */
     private fun applyPanelFilter() {
+        panelAdapter?.highlightQuery = panelQuery.trim()
         val filtered = panelFullList.filter { FuzzySearch.matches(panelQuery, it.text) }
         panelAdapter?.submit(filtered)
         panelEmptyView?.apply {
