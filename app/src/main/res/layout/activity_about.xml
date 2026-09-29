@@ -9,6 +9,7 @@
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="48dp"
+        android:minHeight="0dp"
         android:background="@color/purple_500"
         app:navigationIcon="?attr/homeAsUpIndicator"
         app:navigationIconTint="@color/white"
