@@ -36,7 +36,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="文件接收请求"
-                android:textColor="#222222"
+                android:textColor="@color/text_primary"
                 android:textSize="17sp"
                 android:textStyle="bold" />
 
@@ -47,7 +47,7 @@
                 android:layout_marginTop="2dp"
                 android:ellipsize="end"
                 android:singleLine="true"
-                android:textColor="#666666"
+                android:textColor="@color/text_secondary"
                 android:textSize="13sp" />
         </LinearLayout>
     </LinearLayout>
@@ -83,7 +83,7 @@
                 android:layout_height="wrap_content"
                 android:ellipsize="middle"
                 android:maxLines="2"
-                android:textColor="#222222"
+                android:textColor="@color/text_primary"
                 android:textSize="15sp"
                 android:textStyle="bold" />
 
@@ -92,7 +92,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:textColor="#666666"
+                android:textColor="@color/text_secondary"
                 android:textSize="12sp" />
         </LinearLayout>
     </LinearLayout>
@@ -103,7 +103,7 @@
         android:layout_marginTop="12dp"
         android:gravity="center"
         android:text="30 秒未操作将自动拒绝"
-        android:textColor="#999999"
+        android:textColor="@color/text_tertiary"
         android:textSize="12sp" />
 
     <!-- 操作按钮 -->

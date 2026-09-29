@@ -1,17 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 详情弹窗：媒体预览（图片/视频）+ 元信息 + 圆角内容卡片 + 底部动作区。
+     主界面与悬浮面板共用本布局，控件 ID 勿改 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:padding="20dp">
 
+    <!-- 图片/视频预览：仅媒体类型显示；支持双指缩放、拖动、双击放大/还原 -->
+    <com.clipditto.app.ui.ZoomableImageView
+        android:id="@+id/ivDetailImage"
+        android:layout_width="match_parent"
+        android:layout_height="240dp"
+        android:layout_marginBottom="10dp"
+        android:background="@drawable/bg_item"
+        android:visibility="gone" />
+
     <TextView
         android:id="@+id/detailMeta"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textColor="#888888"
+        android:textColor="@color/text_hint"
         android:textSize="12sp" />
 
+    <!-- 内容卡片：圆角底，长文本内部滚动、可长按选择复制 -->
     <ScrollView
         android:id="@+id/detailScroll"
         android:layout_width="match_parent"
@@ -22,7 +34,10 @@
             android:id="@+id/detailContent"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="#222222"
+            android:background="@drawable/bg_item"
+            android:lineSpacingMultiplier="1.25"
+            android:padding="12dp"
+            android:textColor="@color/text_primary"
             android:textIsSelectable="true"
             android:textSize="15sp" />
     </ScrollView>
@@ -31,27 +46,38 @@
         android:id="@+id/btnDetailPaste"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
+        android:layout_marginTop="14dp"
         android:text="粘贴" />
 
-    <Button
-        android:id="@+id/btnDetailOpenUrl"
+    <!-- 网址类动作：文字按钮右对齐横排，可见性由 ItemActionButtons 控制 -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:visibility="gone" />
+        android:gravity="end"
+        android:orientation="horizontal">
 
-    <Button
-        android:id="@+id/btnDetailOpenAlt"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:visibility="gone" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnDetailOpenUrl"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minHeight="0dp"
+            android:visibility="gone" />
 
-    <Button
-        android:id="@+id/btnDetailOpenBrowser"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:visibility="gone" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnDetailOpenAlt"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minHeight="0dp"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnDetailOpenBrowser"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minHeight="0dp"
+            android:visibility="gone" />
+    </LinearLayout>
 </LinearLayout>

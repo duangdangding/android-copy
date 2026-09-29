@@ -1,10 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- 品牌色（深浅色共用，暗色变体见 values-night/colors.xml） -->
     <color name="purple_500">#FF6750A4</color>
     <color name="purple_700">#FF4A3D8F</color>
     <color name="teal_200">#FF03DAC6</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     <color name="ball_color">#FF6750A4</color>
+
+    <!-- ===== 语义色：暗色模式在 values-night/colors.xml 覆盖 ===== -->
+    <!-- 文字 -->
+    <color name="text_primary">#FF222222</color>
+    <color name="text_secondary">#FF666666</color>
+    <color name="text_hint">#FF888888</color>
+    <color name="text_tertiary">#FF999999</color>
+    <!-- 背景 -->
     <color name="panel_bg">#F5FFFFFF</color>
+    <color name="item_bg">#FFEEEEEE</color>
+    <color name="item_bg_selected">#FFE5DEFA</color>
+    <color name="item_bg_fav">#FFFFF3D6</color>
+    <color name="card_bg">#FFF5F5F5</color>
+    <color name="divider">#FFE0E0E0</color>
+    <!-- 功能色 -->
+    <color name="accent_link">#FF7B1FA2</color>
+    <color name="danger">#FFB00020</color>
 </resources>

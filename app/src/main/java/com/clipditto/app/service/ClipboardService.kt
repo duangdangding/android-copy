@@ -20,6 +20,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
+import android.view.ContextThemeWrapper
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -42,12 +43,14 @@ import com.clipditto.app.data.ClipItem
 import com.clipditto.app.data.ClipRepository
 import com.clipditto.app.data.ClipType
 import com.clipditto.app.sync.relay.RelaySyncManager
+import com.clipditto.app.ui.DetailPreview
 import com.clipditto.app.ui.HistoryAdapter
 import com.clipditto.app.ui.ItemActionButtons
 import com.clipditto.app.ui.MainActivity
 import com.clipditto.app.util.AppSettings
 import com.clipditto.app.util.FuzzySearch
 import com.clipditto.app.util.MediaFiles
+import com.clipditto.app.util.StorageStats
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -931,7 +934,8 @@ class ClipboardService : Service() {
     /** 以服务悬浮窗形式弹窗（Toast 显示不下长文本时使用） */
     private fun showDebugDialog(title: String, message: String) {
         runCatching {
-            val dialog = android.app.AlertDialog.Builder(this)
+            val dialog = android.app.AlertDialog
+                .Builder(ContextThemeWrapper(this, R.style.Theme_ClipDitto))
                 .setTitle(title)
                 .setMessage(message)
                 .setPositiveButton("知道了", null)
@@ -947,7 +951,8 @@ class ClipboardService : Service() {
     private fun showPanelItemMenu(item: ClipItem) {
         val favLabel = if (item.favorite) "取消收藏" else "★ 收藏置顶"
         runCatching {
-            val dialog = android.app.AlertDialog.Builder(this)
+            val dialog = android.app.AlertDialog
+                .Builder(ContextThemeWrapper(this, R.style.Theme_ClipDitto))
                 .setItems(arrayOf("查看详情", favLabel, "删除")) { _, which ->
                     if (which == 0) {
                         showPanelItemDetail(item)
@@ -985,7 +990,9 @@ class ClipboardService : Service() {
      *  底部固定「粘贴」+ 与列表项一致的动作按钮（打开平台/浏览器） */
     private fun showPanelItemDetail(item: ClipItem) {
         runCatching {
-            val view = LayoutInflater.from(this).inflate(R.layout.dialog_detail, null)
+            // Service 上下文不带应用主题（Material 组件会 inflate 失败），需显式包裹
+            val themedCtx = ContextThemeWrapper(this, R.style.Theme_ClipDitto)
+            val view = LayoutInflater.from(themedCtx).inflate(R.layout.dialog_detail, null)
             val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
             val meta = buildString {
                 append(ClipType.label(item.type))
@@ -994,10 +1001,23 @@ class ClipboardService : Service() {
                 item.text?.let { append(" · 共 ${it.length} 字") }
             }
             view.findViewById<TextView>(R.id.detailMeta).text = meta
-            view.findViewById<TextView>(R.id.detailContent).text =
-                item.text ?: item.filePath?.let { "文件路径：$it" } ?: "（无文本内容）"
+            // 文字记录显示全文；媒体/文件记录显示文件名 + 真实保存路径 + 大小
+            view.findViewById<TextView>(R.id.detailContent).text = buildString {
+                append(
+                    item.text
+                        ?: item.filePath?.let { MediaFiles.displayName(this@ClipboardService, it) }
+                        ?: "（无文本内容）"
+                )
+                item.filePath?.let { p ->
+                    append("\n\n路径：${MediaFiles.displayPath(this@ClipboardService, p)}")
+                    val size = MediaFiles.length(this@ClipboardService, p)
+                    if (size > 0) append("\n大小：${StorageStats.format(size)}")
+                }
+            }
+            // 图片/视频记录：显示媒体预览大图
+            DetailPreview.bind(view.findViewById(R.id.ivDetailImage), item)
 
-            val dialog = android.app.AlertDialog.Builder(this)
+            val dialog = android.app.AlertDialog.Builder(themedCtx)
                 .setTitle("详情")
                 .setView(view)
                 .setNegativeButton("关闭", null)
@@ -1032,6 +1052,13 @@ class ClipboardService : Service() {
                     scroll.layoutParams = scroll.layoutParams.apply { height = maxContentH }
                 }
             }
+        }.onFailure {
+            // 悬浮窗弹窗失败原因多样（权限/主题/资源），静默吞掉会无从排查
+            Log.e(TAG, "面板详情弹窗打开失败", it)
+            Toast.makeText(
+                this, "详情弹窗打开失败：${it.javaClass.simpleName}: ${it.message}",
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 

@@ -52,7 +52,7 @@
                 android:layout_height="wrap_content"
                 android:paddingVertical="4dp"
                 android:text="开启后本机剪贴板同时走局域网和中继服务器两条通道同步，离开局域网（如切蜂窝网络）也能与电脑互相同步。"
-                android:textColor="#888888"
+                android:textColor="@color/text_hint"
                 android:textSize="12sp" />
 
             <!-- ── 服务器 ── -->
@@ -61,7 +61,7 @@
                 android:layout_height="wrap_content"
                 android:paddingTop="12dp"
                 android:text="服务器"
-                android:textColor="#666666"
+                android:textColor="@color/text_secondary"
                 android:textSize="13sp" />
 
             <EditText
@@ -88,7 +88,7 @@
                 android:layout_height="wrap_content"
                 android:paddingTop="12dp"
                 android:text="分组"
-                android:textColor="#666666"
+                android:textColor="@color/text_secondary"
                 android:textSize="13sp" />
 
             <EditText
@@ -114,7 +114,7 @@
                 android:layout_height="wrap_content"
                 android:paddingVertical="4dp"
                 android:text="分组密钥只存在各设备本地，同组设备须填相同密钥；填写后服务器只能看到密文。留空为明文模式。"
-                android:textColor="#888888"
+                android:textColor="@color/text_hint"
                 android:textSize="12sp" />
 
             <!-- ── 选项 ── -->
@@ -123,7 +123,7 @@
                 android:layout_height="wrap_content"
                 android:paddingTop="12dp"
                 android:text="选项"
-                android:textColor="#666666"
+                android:textColor="@color/text_secondary"
                 android:textSize="13sp" />
 
             <LinearLayout
@@ -150,7 +150,7 @@
                 android:layout_height="wrap_content"
                 android:paddingVertical="4dp"
                 android:text="关闭时仅文字走中继，图片/文件仅局域网同步。"
-                android:textColor="#888888"
+                android:textColor="@color/text_hint"
                 android:textSize="12sp" />
 
             <!-- ── 状态 ── -->
@@ -158,14 +158,14 @@
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
                 android:layout_marginTop="12dp"
-                android:background="#E0E0E0" />
+                android:background="@color/divider" />
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:paddingTop="12dp"
                 android:text="状态"
-                android:textColor="#666666"
+                android:textColor="@color/text_secondary"
                 android:textSize="13sp" />
 
             <TextView
@@ -174,7 +174,7 @@
                 android:layout_height="wrap_content"
                 android:paddingVertical="6dp"
                 android:text="连接状态：未启用"
-                android:textColor="#7B1FA2"
+                android:textColor="@color/accent_link"
                 android:textSize="14sp" />
 
             <TextView
@@ -183,7 +183,7 @@
                 android:layout_height="wrap_content"
                 android:paddingVertical="4dp"
                 android:text="同组在线设备：无"
-                android:textColor="#333333"
+                android:textColor="@color/text_primary"
                 android:textSize="13sp" />
 
             <TextView
@@ -192,7 +192,7 @@
                 android:layout_height="wrap_content"
                 android:paddingVertical="4dp"
                 android:text="同步游标：seq 0"
-                android:textColor="#888888"
+                android:textColor="@color/text_hint"
                 android:textSize="12sp" />
 
             <LinearLayout

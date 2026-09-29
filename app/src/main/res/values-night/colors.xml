@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 暗色模式：只覆盖语义色，品牌色（purple_500 等）与浅色共用 -->
+<resources>
+    <!-- 文字 -->
+    <color name="text_primary">#FFE8E6EA</color>
+    <color name="text_secondary">#FFAFAAB8</color>
+    <color name="text_hint">#FF8E8A96</color>
+    <color name="text_tertiary">#FF8E8A96</color>
+    <!-- 背景 -->
+    <color name="panel_bg">#F524222B</color>
+    <color name="item_bg">#FF2A2830</color>
+    <color name="item_bg_selected">#FF453C63</color>
+    <color name="item_bg_fav">#FF3A3120</color>
+    <color name="card_bg">#FF1E1C22</color>
+    <color name="divider">#FF3A3742</color>
+    <!-- 功能色 -->
+    <color name="accent_link">#FFCE93D8</color>
+    <color name="danger">#FFCF6679</color>
+</resources>

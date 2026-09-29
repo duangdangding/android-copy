@@ -37,6 +37,7 @@ import com.clipditto.app.service.PasteAccessibilityService
 import com.clipditto.app.service.ShizukuClipboard
 import com.clipditto.app.util.FuzzySearch
 import com.clipditto.app.util.AppSettings
+import com.clipditto.app.util.MediaFiles
 import com.clipditto.app.util.StorageStats
 import com.clipditto.app.util.UpdateChecker
 import kotlinx.coroutines.flow.collectLatest
@@ -390,8 +391,21 @@ class MainActivity : AppCompatActivity() {
             item.text?.let { append(" · 共 ${it.length} 字") }
         }
         view.findViewById<TextView>(R.id.detailMeta).text = meta
-        view.findViewById<TextView>(R.id.detailContent).text =
-            item.text ?: item.filePath?.let { "文件路径：$it" } ?: "（无文本内容）"
+        // 文字记录显示全文；媒体/文件记录显示文件名 + 真实保存路径 + 大小
+        view.findViewById<TextView>(R.id.detailContent).text = buildString {
+            append(
+                item.text
+                    ?: item.filePath?.let { MediaFiles.displayName(this@MainActivity, it) }
+                    ?: "（无文本内容）"
+            )
+            item.filePath?.let { p ->
+                append("\n\n路径：${MediaFiles.displayPath(this@MainActivity, p)}")
+                val size = MediaFiles.length(this@MainActivity, p)
+                if (size > 0) append("\n大小：${StorageStats.format(size)}")
+            }
+        }
+        // 图片/视频记录：显示媒体预览大图
+        DetailPreview.bind(view.findViewById(R.id.ivDetailImage), item)
 
         val dialog = AlertDialog.Builder(this)
             .setTitle("详情")

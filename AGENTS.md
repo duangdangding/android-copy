@@ -13,6 +13,7 @@
 ## 构建与运行
 
 - 工具链：AGP 8.5.0 / Kotlin 1.9.24 / Gradle 8.7（`gradle-8.7/` 目录随仓库携带）/ JDK 17
+- **本机 JDK 位置：`E:\environment\jdk21`（另有 `java1.8`），不要去别处找**；构建前设置 `JAVA_HOME=E:\environment\jdk21`（系统环境变量未配置 JAVA_HOME）
 - `compileSdk 34`，`minSdk 26`，`targetSdk 34`
 - 数据库：Room 2.6.1（**KSP**，不是 kapt）
 - 常用命令（在项目根目录执行）：

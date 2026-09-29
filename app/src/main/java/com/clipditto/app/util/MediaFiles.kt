@@ -37,6 +37,19 @@ object MediaFiles {
                 ?: Uri.parse(path).lastPathSegment?.substringAfterLast('/') ?: "file"
         } else File(path).name
 
+    /** 可读的存储位置：本地绝对路径原样返回；content:// URI 尽量还原成目录形式 */
+    fun displayPath(context: Context, path: String): String {
+        if (!isContentUri(path)) return path
+        val docId = Uri.decode(Uri.parse(path).lastPathSegment ?: return path)
+        // SAF 文档 URI 的 documentId 形如 "primary:Download/ClipDitto/a.jpg"
+        return if (docId.contains(':')) {
+            docId.replaceFirst("primary:", "内部存储/").replace(':', '/')
+        } else {
+            // MediaStore 数字 id 无法反推目录，按本应用默认下载目录显示
+            "Download/ClipDitto/${displayName(context, path)}"
+        }
+    }
+
     fun delete(context: Context, path: String): Boolean =
         if (isContentUri(path)) runCatching {
             // contentResolver.delete 对 SAF 文档 URI 和 MediaStore URI 都有效
