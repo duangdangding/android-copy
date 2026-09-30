@@ -14,6 +14,7 @@
         android:layout_height="40dp"
         android:minHeight="0dp"
         android:background="?attr/colorPrimary"
+        android:theme="@style/ToolbarTheme"
         app:navigationIcon="?attr/homeAsUpIndicator"
         app:navigationIconTint="?attr/colorOnPrimary"
         app:title="设备同步"

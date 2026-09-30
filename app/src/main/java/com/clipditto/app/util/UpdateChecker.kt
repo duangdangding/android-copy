@@ -1,7 +1,13 @@
 package com.clipditto.app.util
 
+import android.content.ContentValues
 import android.content.Context
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.util.Log
+import androidx.core.content.FileProvider
 import com.clipditto.app.BuildConfig
 import com.google.gson.Gson
 import com.google.gson.JsonObject
@@ -81,12 +87,33 @@ object UpdateChecker {
     private fun String?.toVersionPart(): Int =
         this?.takeWhile { it.isDigit() }?.toIntOrNull() ?: 0
 
+    /** 下载完成的结果：安装用 Uri + 下载过程中算出的 SHA-256 + 给用户看的保存位置 */
+    class DownloadResult(
+        /** 调起安装器使用的 Uri（MediaStore content Uri 或 FileProvider Uri） */
+        val uri: Uri,
+        /** 下载流式计算出的 SHA-256（64 位小写十六进制） */
+        val sha256: String,
+        /** 保存位置描述（"系统下载目录"或具体路径），用于提示用户去哪找安装包 */
+        val savedTo: String,
+        /** 外置私有目录落盘时的文件（仅 Android 8~9 分支非空），校验失败时删文件用 */
+        val file: File?
+    ) {
+        /** 校验失败/放弃安装时删除已下载的安装包 */
+        fun delete(context: Context) {
+            file?.delete() ?: runCatching {
+                context.contentResolver.delete(uri, null, null)
+            }
+        }
+    }
+
     /**
-     * 流式下载 APK 到 cacheDir/update_<tag>.apk（先写 .download 临时文件，完成后改名）。
-     * GitHub 的下载地址会 302 重定向，HttpURLConnection 默认跟随。
+     * 流式下载 APK 到系统「下载」目录（文件名 剪贴板_v<tag>.apk），让用户能在文件管理器里找到。
+     * Android 10+ 经 MediaStore 写入 Download/（免存储权限）；Android 8~9 无权限写公共目录，
+     * 退而写入外置应用私有 Download 目录（文件管理器 Android/data 下可见）。
+     * 下载过程中同步计算 SHA-256。GitHub 的下载地址会 302 重定向，HttpURLConnection 默认跟随。
      * @param onProgress (已下载字节, 总字节)；总字节 <=0 表示 Content-Length 未知
      * @param isCancelled 返回 true 时中断下载
-     * @return 成功返回目标文件；失败/取消返回 null（临时文件已清理）
+     * @return 成功返回下载结果；失败/取消返回 null（半成品已清理）
      */
     fun download(
         context: Context,
@@ -94,11 +121,44 @@ object UpdateChecker {
         url: String,
         onProgress: (downloaded: Long, total: Long) -> Unit,
         isCancelled: () -> Boolean
-    ): File? {
+    ): DownloadResult? {
         val appContext = context.applicationContext
-        val dest = File(appContext.cacheDir, "update_$tag.apk")
-        val tmp = File(appContext.cacheDir, "update_$tag.apk.download")
+        val fileName = "剪贴板_v$tag.apk"
+        // 目标：优先 MediaStore 系统下载目录；老版本用外置私有目录兜底
+        val useMediaStore = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+        var itemUri: Uri? = null
+        var file: File? = null
+        val out = if (useMediaStore) {
+            val resolver = appContext.contentResolver
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, "application/vnd.android.package-archive")
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            if (uri == null) {
+                Log.w(TAG, "创建下载目录条目失败")
+                return null
+            }
+            itemUri = uri
+            resolver.openOutputStream(uri) ?: run {
+                resolver.delete(uri, null, null)
+                return null
+            }
+        } else {
+            val dir = appContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            if (dir == null) {
+                Log.w(TAG, "外置存储不可用")
+                return null
+            }
+            dir.mkdirs()
+            val f = File(dir, fileName)
+            file = f
+            f.outputStream()
+        }
         val conn = URL(url).openConnection() as HttpURLConnection
+        var success = false
         try {
             conn.connectTimeout = 10_000
             conn.readTimeout = 15_000
@@ -111,36 +171,56 @@ object UpdateChecker {
                 return null
             }
             val total = conn.contentLengthLong
-            tmp.outputStream().use { out ->
+            val md = MessageDigest.getInstance("SHA-256")
+            var downloaded = 0L
+            out.use { output ->
                 conn.inputStream.use { input ->
                     val buf = ByteArray(64 * 1024)
-                    var downloaded = 0L
                     while (true) {
                         if (isCancelled()) return null
                         val n = input.read(buf)
                         if (n < 0) break
-                        out.write(buf, 0, n)
+                        output.write(buf, 0, n)
+                        md.update(buf, 0, n)
                         downloaded += n
                         onProgress(downloaded, total)
                     }
-                    out.flush()
+                    output.flush()
                 }
             }
             if (isCancelled()) return null
             // 总长度已知时校验完整性
-            if (total > 0 && tmp.length() != total) {
-                Log.w(TAG, "下载不完整: ${tmp.length()}/$total")
+            if (total > 0 && downloaded != total) {
+                Log.w(TAG, "下载不完整: $downloaded/$total")
                 return null
             }
-            dest.delete()
-            if (!tmp.renameTo(dest)) return null
-            return dest
+            val hash = md.digest().joinToString("") { "%02x".format(it) }
+            val result = if (useMediaStore) {
+                // 写完去掉 pending 标记，文件才对其他应用可见
+                val done = ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }
+                appContext.contentResolver.update(itemUri!!, done, null, null)
+                DownloadResult(itemUri!!, hash, "系统下载目录", null)
+            } else {
+                val uri = FileProvider.getUriForFile(
+                    appContext, "${appContext.packageName}.fileprovider", file!!
+                )
+                DownloadResult(uri, hash, file!!.absolutePath, file)
+            }
+            success = true
+            return result
         } catch (e: Exception) {
             Log.w(TAG, "下载更新包异常: ${e.message}")
             return null
         } finally {
             conn.disconnect()
-            tmp.delete()
+            // 失败/取消时清理半成品（pending 条目或未写完的文件）
+            if (!success) {
+                runCatching {
+                    if (useMediaStore) itemUri?.let {
+                        appContext.contentResolver.delete(it, null, null)
+                    } else file?.delete()
+                }
+            }
         }
     }
 
@@ -176,19 +256,5 @@ object UpdateChecker {
         } finally {
             conn.disconnect()
         }
-    }
-
-    /** 计算文件的 SHA-256（64 位小写十六进制） */
-    fun sha256(file: File): String {
-        val md = MessageDigest.getInstance("SHA-256")
-        file.inputStream().use { input ->
-            val buf = ByteArray(64 * 1024)
-            while (true) {
-                val n = input.read(buf)
-                if (n < 0) break
-                md.update(buf, 0, n)
-            }
-        }
-        return md.digest().joinToString("") { "%02x".format(it) }
     }
 }

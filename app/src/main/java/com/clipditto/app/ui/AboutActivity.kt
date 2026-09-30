@@ -12,7 +12,6 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.clipditto.app.BuildConfig
 import com.clipditto.app.R
@@ -21,7 +20,6 @@ import com.clipditto.app.util.UpdateChecker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -35,7 +33,7 @@ class AboutActivity : AppCompatActivity() {
     private var latestInfo: UpdateChecker.ReleaseInfo? = null
 
     /** 授权后待安装的更新包（从系统授权页返回时继续安装） */
-    private var pendingInstallApk: File? = null
+    private var pendingInstallApk: Uri? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -146,7 +144,7 @@ class AboutActivity : AppCompatActivity() {
         dialog.show()
 
         lifecycleScope.launch {
-            val apk = withContext(Dispatchers.IO) {
+            val result = withContext(Dispatchers.IO) {
                 UpdateChecker.download(
                     applicationContext, info.tag, info.apkUrl,
                     onProgress = { done, total ->
@@ -165,22 +163,19 @@ class AboutActivity : AppCompatActivity() {
                 )
             }
             runCatching { dialog.dismiss() }
-            if (apk == null) {
+            if (result == null) {
                 if (!cancelled.get()) Toast.makeText(
                     this@AboutActivity, "下载失败，请重试", Toast.LENGTH_SHORT
                 ).show()
                 return@launch
             }
-            // release 附带 .sha256 校验文件时比对哈希；旧 release 没有则跳过校验
+            // release 附带 .sha256 校验文件时比对哈希（下载时已流式算出）；旧 release 没有则跳过
             if (info.sha256Url != null) {
-                tvProgress.text = "校验中…"
                 val expected = withContext(Dispatchers.IO) {
                     UpdateChecker.fetchSha256(info.sha256Url)
                 }
-                val actual = withContext(Dispatchers.IO) { UpdateChecker.sha256(apk) }
-                runCatching { dialog.dismiss() }
-                if (expected == null || !actual.equals(expected, ignoreCase = true)) {
-                    apk.delete()
+                if (expected == null || !result.sha256.equals(expected, ignoreCase = true)) {
+                    result.delete(applicationContext)
                     Toast.makeText(
                         this@AboutActivity, "安装包校验失败，请重新下载", Toast.LENGTH_LONG
                     ).show()
@@ -188,7 +183,10 @@ class AboutActivity : AppCompatActivity() {
                 }
                 Toast.makeText(this@AboutActivity, "校验通过", Toast.LENGTH_SHORT).show()
             }
-            installApk(apk)
+            Toast.makeText(
+                this@AboutActivity, "已保存到${result.savedTo}", Toast.LENGTH_LONG
+            ).show()
+            installApk(result.uri)
         }
     }
 
@@ -196,9 +194,9 @@ class AboutActivity : AppCompatActivity() {
      * 调起系统安装器。Android 8+ 需要「安装未知应用」权限：
      * 未授权先引导跳转系统设置，用户授权返回后（onResume）自动继续安装。
      */
-    private fun installApk(apk: File) {
+    private fun installApk(uri: Uri) {
         if (!packageManager.canRequestPackageInstalls()) {
-            pendingInstallApk = apk
+            pendingInstallApk = uri
             MaterialAlertDialogBuilder(this)
                 .setTitle("需要安装权限")
                 .setMessage("安装更新需要「安装未知应用」权限，请在打开的页面中允许本应用安装")
@@ -215,7 +213,6 @@ class AboutActivity : AppCompatActivity() {
             return
         }
         pendingInstallApk = null
-        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", apk)
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)

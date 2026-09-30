@@ -2,4 +2,6 @@
 <paths>
     <files-path name="media" path="media/" />
     <cache-path name="cache" path="." />
+    <!-- 更新包下载（Android 8~9 无外置存储权限时落到外置私有 Download 目录） -->
+    <external-files-path name="ext_files" path="." />
 </paths>
