@@ -1,7 +1,13 @@
 package com.clipditto.app.sync
 
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import com.clipditto.app.App
 import com.clipditto.app.R
 import com.clipditto.app.data.ClipItem
@@ -19,6 +25,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 局域网同步总控：根据开关状态驱动服务启停、NSD 注册/扫描、自动同步循环。
@@ -69,8 +80,22 @@ object LanSyncManager {
                 refreshDevices()
             },
             pairApproval = { requester ->
-                // 设备页在前台时弹窗等待用户确认（最多 30 秒），否则返回 null
-                pairApprovalUiHandler?.invoke(requester)
+                val ui = pairApprovalUiHandler
+                // 确认框弹在用户正在看的页面上：设备页在前台用页面回调；
+                // 本 App 其他页面前台 → 全局弹窗；App 在后台或弹不出来 → 通知（同意/拒绝按钮）；
+                // 弹了没人理（超时）→ null（对方收到"需确认"提示，不叠加等待）
+                when {
+                    ui != null -> ui.invoke(requester)
+                    else -> when (
+                        App.topActivity
+                            ?.let { com.clipditto.app.ui.PairApprovalUi.askBlocking(it, requester) }
+                    ) {
+                        com.clipditto.app.ui.PairApprovalUi.Answer.APPROVED -> true
+                        com.clipditto.app.ui.PairApprovalUi.Answer.REJECTED -> false
+                        com.clipditto.app.ui.PairApprovalUi.Answer.TIMEOUT -> null
+                        else -> awaitPairApprovalViaNotification(requester)
+                    }
+                }
             },
             onUnpaired = { deviceId ->
                 // 对方主动解除配对：本地同步解除配对。
@@ -684,6 +709,102 @@ object LanSyncManager {
      */
     @Volatile
     var pairApprovalUiHandler: ((LanDevice) -> Boolean)? = null
+
+    // ---------------- 配对请求通知（设备页不在前台时） ----------------
+
+    /** 等待用户决定的配对请求：deviceId → 等待句柄 */
+    private class PairWaiter(
+        val requester: LanDevice,
+        val latch: CountDownLatch,
+        val result: AtomicBoolean,
+        val notifyId: Int
+    )
+
+    private val pendingPair = ConcurrentHashMap<String, PairWaiter>()
+    private val pairNotifySeq = AtomicInteger(0)
+
+    /** 配对请求通知 id 起始段（避开文件共享的 3100 段与同步结果通知的 1002） */
+    private val pairNotifyBase = 3200
+
+    /** 通知路径等待上限：配对请求读超时 35 秒，留 10 秒余量 */
+    private val pairConfirmTimeoutSec = 25L
+
+    /**
+     * 设备页不在前台时的配对确认：发带「同意/拒绝」按钮的通知，阻塞等待用户决定。
+     * @return true 同意 / false 拒绝 / null 无法询问（无通知权限）或超时未响应
+     */
+    private fun awaitPairApprovalViaNotification(requester: LanDevice): Boolean? {
+        if (!canNotify()) {
+            Log.w(TAG, "无通知权限，无法询问配对确认: ${requester.deviceId}")
+            return null
+        }
+        val w = PairWaiter(
+            requester, CountDownLatch(1), AtomicBoolean(false),
+            pairNotifyBase + pairNotifySeq.incrementAndGet() % 1000
+        )
+        pendingPair[requester.deviceId] = w
+        return try {
+            postPairRequestNotification(requester, w.notifyId)
+            val decided = w.latch.await(pairConfirmTimeoutSec, TimeUnit.SECONDS)
+            if (decided) w.result.get() else null
+        } finally {
+            pendingPair.remove(requester.deviceId)
+            cancelPairNotification(w.notifyId)
+        }
+    }
+
+    /** 通知按钮 / 设备页补弹窗回调：解出对应请求的等待锁 */
+    fun resolvePendingPair(deviceId: String, approved: Boolean) {
+        pendingPair[deviceId]?.let {
+            it.result.set(approved)
+            it.latch.countDown()
+        }
+    }
+
+    /** 设备页 onResume 时取通知路径挂起中的配对请求，补弹确认框 */
+    fun pendingPairRequester(): LanDevice? = pendingPair.values.firstOrNull()?.requester
+
+    private fun canNotify(): Boolean =
+        Build.VERSION.SDK_INT < 33 ||
+            appContext.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+
+    /** 「配对请求」通知：带 同意配对/拒绝 两个动作按钮，点通知体打开设备页 */
+    private fun postPairRequestNotification(requester: LanDevice, notifyId: Int) {
+        fun actionPi(action: String): PendingIntent = PendingIntent.getBroadcast(
+            appContext, notifyId,
+            Intent(appContext, PairActionReceiver::class.java)
+                .setAction(action)
+                .putExtra(PairActionReceiver.EXTRA_DEVICE_ID, requester.deviceId),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val openPi = PendingIntent.getActivity(
+            appContext, notifyId,
+            Intent(appContext, com.clipditto.app.ui.DevicesActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val modelSuffix = requester.model?.takeIf { it.isNotBlank() }?.let { "（$it）" } ?: ""
+        val n = NotificationCompat.Builder(appContext, App.CHANNEL_PAIR)
+            .setSmallIcon(R.drawable.ic_clipboard)
+            .setContentTitle("配对请求")
+            .setContentText("「${requester.displayName}$modelSuffix」请求与本机配对")
+            .setContentIntent(openPi)
+            .setAutoCancel(true)
+            .addAction(0, "同意配对", actionPi(PairActionReceiver.ACTION_ACCEPT))
+            .addAction(0, "拒绝", actionPi(PairActionReceiver.ACTION_REJECT))
+            .build()
+        runCatching {
+            (appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .notify(notifyId, n)
+        }
+    }
+
+    private fun cancelPairNotification(notifyId: Int) {
+        runCatching {
+            (appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .cancel(notifyId)
+        }
+    }
 
     /** 配对失败的具体原因 */
     sealed class PairError {

@@ -256,6 +256,8 @@ class DevicesActivity : AppCompatActivity() {
         LanSyncManager.discoveryScreenActive = true
         // 注册配对确认弹窗：其他设备请求配对时在此页面弹出同意/拒绝
         LanSyncManager.pairApprovalUiHandler = { requester -> askPairApproval(requester) }
+        // 通知路径挂起中的配对请求：用户点通知进入本页时补弹确认框
+        LanSyncManager.pendingPairRequester()?.let { showPendingPairDialog(it) }
     }
 
     override fun onPause() {
@@ -264,30 +266,24 @@ class DevicesActivity : AppCompatActivity() {
         LanSyncManager.pairApprovalUiHandler = null
     }
 
-    /** 配对确认弹窗：在 HTTP 服务线程上被调用，阻塞等待用户选择（最多 30 秒） */
-    private fun askPairApproval(requester: LanDevice): Boolean {
-        if (isFinishing || isDestroyed) return false
-        val latch = java.util.concurrent.CountDownLatch(1)
-        val approved = java.util.concurrent.atomic.AtomicBoolean(false)
-        runOnUiThread {
-            if (isFinishing || isDestroyed) {
-                latch.countDown()
-                return@runOnUiThread
+    /** 配对确认弹窗：在 HTTP 服务线程上被调用，阻塞等待用户选择（共享实现见 PairApprovalUi） */
+    private fun askPairApproval(requester: LanDevice): Boolean =
+        PairApprovalUi.askBlocking(this, requester) == PairApprovalUi.Answer.APPROVED
+
+    /** 通知路径挂起的配对请求：用户点通知进入本页时补弹确认框（不阻塞，结果走等待锁） */
+    private fun showPendingPairDialog(requester: LanDevice) {
+        val modelSuffix = requester.model?.takeIf { it.isNotBlank() }?.let { "（$it）" } ?: ""
+        MaterialAlertDialogBuilder(this)
+            .setTitle("配对请求")
+            .setMessage("「${requester.displayName}$modelSuffix」请求与本机配对，配对后可以访问你共享的剪贴板内容。\n\n是否同意？")
+            .setCancelable(false)
+            .setPositiveButton("同意配对") { _, _ ->
+                LanSyncManager.resolvePendingPair(requester.deviceId, true)
             }
-            val modelSuffix = requester.model?.takeIf { it.isNotBlank() }?.let { "（$it）" } ?: ""
-            MaterialAlertDialogBuilder(this)
-                .setTitle("配对请求")
-                .setMessage("「${requester.displayName}$modelSuffix」请求与本机配对，配对后可以访问你共享的剪贴板内容。\n\n是否同意？")
-                .setCancelable(false)
-                .setPositiveButton("同意配对") { _, _ ->
-                    approved.set(true)
-                    latch.countDown()
-                }
-                .setNegativeButton("拒绝") { _, _ -> latch.countDown() }
-                .show()
-        }
-        latch.await(30, java.util.concurrent.TimeUnit.SECONDS)
-        return approved.get()
+            .setNegativeButton("拒绝") { _, _ ->
+                LanSyncManager.resolvePendingPair(requester.deviceId, false)
+            }
+            .show()
     }
 
     // ---------------- 列表与多选 ----------------
@@ -412,58 +408,64 @@ class DevicesActivity : AppCompatActivity() {
             })
             addView(codeInput)
         }
-        MaterialAlertDialogBuilder(this)
+        val dialog = MaterialAlertDialogBuilder(this)
             .setTitle("配对「${d.displayName}」")
             .setMessage("请在对方设备上打开「共享剪贴板」，屏幕上会显示配对码")
             .setView(container)
-            .setPositiveButton("配对") { _, _ ->
-                // 名称有修改则先保存，对方配对成功后显示的就是新名字
-                val name = nameInput.text.toString().trim()
-                if (name.isNotEmpty() && name != s.deviceName) {
-                    s.deviceName = name
-                    LanSyncManager.refreshName()
-                    refreshDiag()
-                }
-                val token = codeInput.text.toString().trim()
-                if (token.length != 6) {
-                    Toast.makeText(this, "配对码是 6 位数字", Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                lifecycleScope.launch {
-                    val err = LanSyncManager.pair(d, token)
-                    val msg = when (err) {
-                        null -> "配对成功"
-                        is LanSyncManager.PairError.BadToken ->
-                            "配对码错误\n\n请核对对方设备屏幕上显示的 6 位配对码（不是本机的码）"
-                        is LanSyncManager.PairError.SharingOff ->
-                            "对方未开启「共享本机剪贴板」\n\n请在对方设备上打开该开关"
-                        is LanSyncManager.PairError.Offline ->
-                            "设备不在线\n\n请点「重新扫描」后重试"
-                        is LanSyncManager.PairError.Rejected ->
-                            "对方拒绝了本次配对"
-                        is LanSyncManager.PairError.NeedConfirm ->
-                            "等待对方确认超时\n\n请让对方打开「设备页」后重试，或让对方开启「自动同意配对请求」"
-                        is LanSyncManager.PairError.Blocked ->
-                            "该设备在你的黑名单中\n\n请先在「黑名单」中将其移出"
-                        is LanSyncManager.PairError.BlockedBy ->
-                            "对方已把你加入黑名单\n\n等对方移出黑名单后可重新配对"
-                        is LanSyncManager.PairError.ConnectFail ->
-                            "连不上对方\n\n${err.detail}"
-                    }
-                    if (err == null) {
-                        Toast.makeText(this@DevicesActivity, msg, Toast.LENGTH_SHORT).show()
-                    } else {
-                        // 失败详情可能较长，用弹窗完整显示
-                        MaterialAlertDialogBuilder(this@DevicesActivity)
-                            .setTitle("配对失败")
-                            .setMessage(msg)
-                            .setPositiveButton("知道了", null)
-                            .show()
-                    }
-                }
-            }
+            // 按钮监听到 show 之后重写：只有配对成功才关闭弹窗，失败保留现场可直接重试
+            .setPositiveButton("配对", null)
             .setNegativeButton("取消", null)
-            .show()
+            .create()
+        dialog.show()
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener { btn ->
+            // 名称有修改则先保存，对方配对成功后显示的就是新名字
+            val name = nameInput.text.toString().trim()
+            if (name.isNotEmpty() && name != s.deviceName) {
+                s.deviceName = name
+                LanSyncManager.refreshName()
+                refreshDiag()
+            }
+            val token = codeInput.text.toString().trim()
+            if (token.length != 6) {
+                Toast.makeText(this, "配对码是 6 位数字", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            // 配对中禁用按钮防重复点击（对方可能弹窗确认，最长等 35 秒）
+            btn.isEnabled = false
+            lifecycleScope.launch {
+                val err = LanSyncManager.pair(d, token)
+                if (err == null) {
+                    Toast.makeText(this@DevicesActivity, "配对成功", Toast.LENGTH_SHORT).show()
+                    dialog.dismiss()
+                    return@launch
+                }
+                btn.isEnabled = true
+                val msg = when (err) {
+                    is LanSyncManager.PairError.BadToken ->
+                        "配对码错误\n\n请核对对方设备屏幕上显示的 6 位配对码（不是本机的码）"
+                    is LanSyncManager.PairError.SharingOff ->
+                        "对方未开启「共享本机剪贴板」\n\n请在对方设备上打开该开关"
+                    is LanSyncManager.PairError.Offline ->
+                        "设备不在线\n\n请点「重新扫描」后重试"
+                    is LanSyncManager.PairError.Rejected ->
+                        "对方拒绝了本次配对"
+                    is LanSyncManager.PairError.NeedConfirm ->
+                        "对方未响应配对请求\n\n请让对方留意通知栏的「配对请求」通知，或让对方开启「自动同意配对请求」"
+                    is LanSyncManager.PairError.Blocked ->
+                        "该设备在你的黑名单中\n\n请先在「黑名单」中将其移出"
+                    is LanSyncManager.PairError.BlockedBy ->
+                        "对方已把你加入黑名单\n\n等对方移出黑名单后可重新配对"
+                    is LanSyncManager.PairError.ConnectFail ->
+                        "连不上对方\n\n${err.detail}"
+                }
+                // 失败详情可能较长，用弹窗完整显示（输入弹窗保持打开，关掉本提示即可重试）
+                MaterialAlertDialogBuilder(this@DevicesActivity)
+                    .setTitle("配对失败")
+                    .setMessage(msg)
+                    .setPositiveButton("知道了", null)
+                    .show()
+            }
+        }
     }
 
     private fun showDeviceMenu(d: LanDevice) {

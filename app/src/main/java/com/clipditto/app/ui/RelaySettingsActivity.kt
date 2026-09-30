@@ -1,5 +1,6 @@
 package com.clipditto.app.ui
 
+import android.content.ClipboardManager
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
@@ -71,6 +72,10 @@ class RelaySettingsActivity : AppCompatActivity() {
             et.setOnEditorActionListener { _, _, _ -> saveInputs(); false }
         }
 
+        // 密钥是密码框：悬浮球被系统隐藏、无障碍也贴不进去，用页内按钮从前台剪贴板粘贴
+        bindPaste(R.id.btnPasteAccessKey, etAccessKey)
+        bindPaste(R.id.btnPasteGroupKey, etGroupKey)
+
         swEnabled.setOnCheckedChangeListener { _, isChecked ->
             if (suppressSwitch) return@setOnCheckedChangeListener
             saveInputs()
@@ -122,6 +127,27 @@ class RelaySettingsActivity : AppCompatActivity() {
             RelaySyncManager.peers.collectLatest { refreshStatusArea() }
         }
         refreshStatusArea()
+    }
+
+    /**
+     * 密钥框的「粘贴」按钮：直接读系统剪贴板填入并保存。
+     * 密码框聚焦时系统会隐藏悬浮窗（悬浮球无法使用），且无障碍 ACTION_PASTE
+     * 对密码节点无效；App 在前台读剪贴板没有任何限制，这是唯一可靠的通道。
+     */
+    private fun bindPaste(btnId: Int, target: EditText) {
+        findViewById<Button>(btnId).setOnClickListener {
+            val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+            val text = cm.primaryClip?.takeIf { it.itemCount > 0 }
+                ?.getItemAt(0)?.coerceToText(this)?.toString()?.trim()
+            if (text.isNullOrEmpty()) {
+                Toast.makeText(this, "剪贴板为空", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            target.setText(text)
+            target.setSelection(text.length)
+            saveInputs()
+            Toast.makeText(this, "已粘贴", Toast.LENGTH_SHORT).show()
+        }
     }
 
     /** 把输入框内容写回配置（任何变更都会触发自动重连） */

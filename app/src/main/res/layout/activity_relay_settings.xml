@@ -76,14 +76,33 @@
                 android:inputType="textUri"
                 android:textSize="14sp" />
 
-            <EditText
-                android:id="@+id/etAccessKey"
+            <!-- 密钥是密码框：聚焦时系统会隐藏悬浮窗（悬浮球不可用），
+                 无障碍也无法贴入密码节点，故提供页内「粘贴」按钮（前台读剪贴板无限制） -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="接入密钥（服务器的 RELAY_ACCESS_KEYS 之一）"
-                android:imeOptions="actionNext"
-                android:inputType="textPassword"
-                android:textSize="14sp" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <EditText
+                    android:id="@+id/etAccessKey"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:hint="接入密钥（服务器的 RELAY_ACCESS_KEYS 之一）"
+                    android:imeOptions="actionNext"
+                    android:inputType="textPassword"
+                    android:textSize="14sp" />
+
+                <Button
+                    android:id="@+id/btnPasteAccessKey"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="@dimen/scan_btn_min_w"
+                    android:minHeight="@dimen/scan_btn_min_h"
+                    android:text="粘贴"
+                    android:textSize="@dimen/scan_btn_text_size" />
+            </LinearLayout>
 
             <!-- ── 分组 ── -->
             <TextView
@@ -103,14 +122,31 @@
                 android:inputType="text"
                 android:textSize="14sp" />
 
-            <EditText
-                android:id="@+id/etGroupKey"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="分组密钥（可选，端到端加密）"
-                android:imeOptions="actionDone"
-                android:inputType="textPassword"
-                android:textSize="14sp" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <EditText
+                    android:id="@+id/etGroupKey"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:hint="分组密钥（可选，端到端加密）"
+                    android:imeOptions="actionDone"
+                    android:inputType="textPassword"
+                    android:textSize="14sp" />
+
+                <Button
+                    android:id="@+id/btnPasteGroupKey"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="@dimen/scan_btn_min_w"
+                    android:minHeight="@dimen/scan_btn_min_h"
+                    android:text="粘贴"
+                    android:textSize="@dimen/scan_btn_text_size" />
+            </LinearLayout>
 
             <TextView
                 android:layout_width="match_parent"

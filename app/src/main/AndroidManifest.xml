@@ -95,6 +95,11 @@
             android:name=".share.FileShareActionReceiver"
             android:exported="false" />
 
+        <!-- 配对请求通知的 同意配对/拒绝 按钮 -->
+        <receiver
+            android:name=".sync.PairActionReceiver"
+            android:exported="false" />
+
         <!-- 剪贴板监听 + 悬浮窗服务 -->
         <service
             android:name=".service.ClipboardService"
