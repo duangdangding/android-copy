@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 设备同步页工具栏菜单：同步设置入口 -->
+<!-- 设备同步页工具栏菜单：同步设置入口；低频的「深度扫描」收进溢出菜单 -->
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_sweep"
+        android:title="深度扫描（遍历本网段）"
+        app:showAsAction="never" />
 
     <item
         android:id="@+id/action_settings"

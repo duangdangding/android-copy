@@ -5,11 +5,12 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import androidx.lifecycle.lifecycleScope
 import com.clipditto.app.R
+import com.clipditto.app.util.EdgeToEdge
 import com.clipditto.app.sync.relay.RelaySettings
 import com.clipditto.app.sync.relay.RelaySyncManager
 import kotlinx.coroutines.flow.collectLatest
@@ -38,6 +39,8 @@ class RelaySettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_relay_settings)
+        // 沉浸式：Toolbar 背景延伸到状态栏，底部避开手势导航条
+        EdgeToEdge.apply(this, findViewById(R.id.toolbar))
 
         RelaySyncManager.init(this)
         settings = RelaySyncManager.settings()
@@ -99,7 +102,7 @@ class RelaySettingsActivity : AppCompatActivity() {
         }
 
         findViewById<Button>(R.id.btnResetCursor).setOnClickListener {
-            AlertDialog.Builder(this)
+            MaterialAlertDialogBuilder(this)
                 .setTitle("全量补拉")
                 .setMessage("将清除同步游标并重新连接，服务器暂存的历史条目会全部重新拉取（重复内容自动去重）。确定继续？")
                 .setPositiveButton("继续") { _, _ ->

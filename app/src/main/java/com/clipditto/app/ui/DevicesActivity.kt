@@ -1,6 +1,6 @@
 package com.clipditto.app.ui
 
-import android.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.app.DatePickerDialog
 import android.content.Intent
 import android.os.Build
@@ -17,6 +17,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.clipditto.app.R
+import com.clipditto.app.util.EdgeToEdge
 import com.clipditto.app.data.ClipRepository
 import com.clipditto.app.sync.LanDevice
 import com.clipditto.app.sync.LanSyncManager
@@ -52,6 +53,8 @@ class DevicesActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_devices)
+        // 沉浸式：Toolbar 背景延伸到状态栏，底部避开手势导航条
+        EdgeToEdge.apply(this, findViewById(R.id.toolbar))
 
         repo = ClipRepository(this)
         LanSyncManager.init(this)
@@ -61,12 +64,17 @@ class DevicesActivity : AppCompatActivity() {
             setNavigationOnClickListener { finish() }
             // 右上角「设置」：局域网同步/云端中继的全部配置项
             setOnMenuItemClickListener { item ->
-                if (item.itemId == R.id.action_settings) {
-                    startActivity(
-                        Intent(this@DevicesActivity, LanSyncSettingsActivity::class.java)
-                    )
-                    true
-                } else false
+                when (item.itemId) {
+                    R.id.action_settings -> {
+                        // 右上角「设置」：局域网同步/云端中继的全部配置项
+                        startActivity(
+                            Intent(this@DevicesActivity, LanSyncSettingsActivity::class.java)
+                        )
+                        true
+                    }
+                    R.id.action_sweep -> startSweep()
+                    else -> false
+                }
             }
         }
 
@@ -88,7 +96,7 @@ class DevicesActivity : AppCompatActivity() {
         bindBottomBar()
 
         // 文件共享入口（与剪贴板同步相互独立的功能，合入设备同步页）
-        findViewById<TextView>(R.id.tvFileShare).setOnClickListener {
+        findViewById<android.view.View>(R.id.rowFileShare).setOnClickListener {
             startActivity(Intent(this, FileShareActivity::class.java))
         }
 
@@ -98,14 +106,6 @@ class DevicesActivity : AppCompatActivity() {
         }
 
         findViewById<Button>(R.id.btnAddIp).setOnClickListener { showAddIpDialog() }
-        findViewById<Button>(R.id.btnSweep).setOnClickListener {
-            if (LanSyncManager.discovery.sweeping.value) {
-                Toast.makeText(this, "深度扫描进行中…", Toast.LENGTH_SHORT).show()
-            } else {
-                LanSyncManager.discovery.sweepSubnet()
-                Toast.makeText(this, "正在遍历本网段所有地址（约 10 秒）…", Toast.LENGTH_SHORT).show()
-            }
-        }
 
         requestNearbyWifiPermissionIfNeeded()
 
@@ -154,7 +154,7 @@ class DevicesActivity : AppCompatActivity() {
             inputType = InputType.TYPE_CLASS_PHONE
             hint = "对方 IP，如 192.168.1.23"
         }
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("手动添加设备")
             .setMessage("在对方设备上查看其局域网 IP（Wi-Fi 设置里），输入后直接连接")
             .setView(input)
@@ -178,6 +178,17 @@ class DevicesActivity : AppCompatActivity() {
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    /** 深度扫描：遍历本网段所有地址（已收进右上角溢出菜单，低频操作） */
+    private fun startSweep(): Boolean {
+        if (LanSyncManager.discovery.sweeping.value) {
+            Toast.makeText(this, "深度扫描进行中…", Toast.LENGTH_SHORT).show()
+        } else {
+            LanSyncManager.discovery.sweepSubnet()
+            Toast.makeText(this, "正在遍历本网段所有地址（约 10 秒）…", Toast.LENGTH_SHORT).show()
+        }
+        return true
     }
 
     private fun refreshDiag() {
@@ -208,14 +219,20 @@ class DevicesActivity : AppCompatActivity() {
             append(" · 收到广播 ${st.beaconRx}")
             append(" · 识别 ${devices.count { it.online }} 台")
         }
-        findViewById<TextView>(R.id.tvDiag).text = "$line1\n$line2"
+        // 诊断信息分级：正常状态用次要色；出现异常（无局域网IP / 广播失败 / 权限缺失）才标红
+        val hasProblem = disc.localIp() == null ||
+            (s.discoverable && disc.registerError.value != null) || !nearbyGranted
+        findViewById<TextView>(R.id.tvDiag).apply {
+            text = "$line1\n$line2"
+            setTextColor(getColor(if (hasProblem) R.color.danger else R.color.text_secondary))
+        }
     }
 
     // ---------------- 黑名单 ----------------
 
     /** 加入黑名单确认 */
     private fun confirmBlock(d: LanDevice) {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("加入黑名单")
             .setMessage("「${d.displayName}」加入黑名单后：\n· 你无法对它同步/配对\n· 它无法扫描到本机\n· 它无法访问本机内容\n\n确定？")
             .setPositiveButton("加入") { _, _ ->
@@ -258,7 +275,7 @@ class DevicesActivity : AppCompatActivity() {
                 return@runOnUiThread
             }
             val modelSuffix = requester.model?.takeIf { it.isNotBlank() }?.let { "（$it）" } ?: ""
-            AlertDialog.Builder(this)
+            MaterialAlertDialogBuilder(this)
                 .setTitle("配对请求")
                 .setMessage("「${requester.displayName}$modelSuffix」请求与本机配对，配对后可以访问你共享的剪贴板内容。\n\n是否同意？")
                 .setCancelable(false)
@@ -318,7 +335,7 @@ class DevicesActivity : AppCompatActivity() {
 
     /** 纯云端设备点击：说明 + 删除同步来的记录（中继是实时推送，无需手动同步） */
     private fun showRelayOnlyMenu(d: LanDevice) {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("${d.displayName}（云端在线）")
             .setMessage("通过中继服务器连接，未在局域网内。\n复制内容会自动实时同步，无需手动操作。")
             .setPositiveButton("删除该设备同步来的记录") { _, _ -> confirmDeleteRemote(listOf(d)) }
@@ -329,7 +346,7 @@ class DevicesActivity : AppCompatActivity() {
     /** 离线设备点击：删除同步来的记录 / 从列表移除（已配对但仅云端可达的也走这里，这两个操作都是本地管理，可用） */
     private fun showOfflineDeviceMenu(d: LanDevice) {
         val state = if (d.viaRelay) "云端在线" else "离线"
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("${d.displayName}（$state）")
             .setItems(arrayOf("删除该设备同步来的记录", "从列表移除该设备")) { _, which ->
                 when (which) {
@@ -342,7 +359,7 @@ class DevicesActivity : AppCompatActivity() {
 
     /** 删除离线设备确认：解除本地配对并清理同步水位，列表不再残留 */
     private fun confirmRemoveDevice(d: LanDevice) {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("移除设备")
             .setMessage("把「${d.displayName}」从列表移除？\n将解除本地配对并清理同步进度，已同步到本机的记录保留。")
             .setPositiveButton("移除") { _, _ ->
@@ -356,7 +373,7 @@ class DevicesActivity : AppCompatActivity() {
 
     /** 未配对设备点击：配对 / 加入黑名单 */
     private fun showUnpairedMenu(d: LanDevice) {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(d.displayName)
             .setItems(arrayOf("配对", "加入黑名单")) { _, which ->
                 when (which) {
@@ -395,7 +412,7 @@ class DevicesActivity : AppCompatActivity() {
             })
             addView(codeInput)
         }
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("配对「${d.displayName}」")
             .setMessage("请在对方设备上打开「共享剪贴板」，屏幕上会显示配对码")
             .setView(container)
@@ -437,7 +454,7 @@ class DevicesActivity : AppCompatActivity() {
                         Toast.makeText(this@DevicesActivity, msg, Toast.LENGTH_SHORT).show()
                     } else {
                         // 失败详情可能较长，用弹窗完整显示
-                        AlertDialog.Builder(this@DevicesActivity)
+                        MaterialAlertDialogBuilder(this@DevicesActivity)
                             .setTitle("配对失败")
                             .setMessage(msg)
                             .setPositiveButton("知道了", null)
@@ -450,7 +467,7 @@ class DevicesActivity : AppCompatActivity() {
     }
 
     private fun showDeviceMenu(d: LanDevice) {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(d.displayName)
             .setItems(arrayOf("立即同步", "删除该设备同步来的记录", "取消配对", "加入黑名单")) { _, which ->
                 when (which) {
@@ -504,7 +521,7 @@ class DevicesActivity : AppCompatActivity() {
 
     /** 三种同步范围：最近 N 条 / 某一天 / 全部 */
     private fun showSyncScopeDialog(onPicked: (LanSyncManager.SyncScope) -> Unit) {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("选择同步范围")
             .setItems(arrayOf("同步最近 N 条", "同步某一天", "全部同步")) { _, which ->
                 when (which) {
@@ -521,7 +538,7 @@ class DevicesActivity : AppCompatActivity() {
     private fun showRecentCountDialog(onPicked: (LanSyncManager.SyncScope) -> Unit) {
         val counts = intArrayOf(10, 20, 50, 100, 200)
         val labels = counts.map { "$it 条" }.toTypedArray() + "自定义…"
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("同步最近多少条？")
             .setItems(labels) { _, which ->
                 if (which < counts.size) {
@@ -544,7 +561,7 @@ class DevicesActivity : AppCompatActivity() {
             setPadding(pad, pad / 2, pad, 0)
             addView(input)
         }
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("自定义条数")
             .setView(container)
             .setPositiveButton("同步") { _, _ ->
@@ -616,7 +633,7 @@ class DevicesActivity : AppCompatActivity() {
                 }
             }
             // 多台设备结果较长，用弹窗完整显示
-            AlertDialog.Builder(this@DevicesActivity)
+            MaterialAlertDialogBuilder(this@DevicesActivity)
                 .setTitle("同步结果")
                 .setMessage(sb.toString().trim())
                 .setPositiveButton("知道了", null)
@@ -627,7 +644,7 @@ class DevicesActivity : AppCompatActivity() {
     private fun confirmDeleteRemote(targets: List<LanDevice>) {
         if (targets.isEmpty()) return
         val names = targets.joinToString("、") { it.displayName }
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("删除同步记录")
             .setMessage("将删除从「$names」同步到本机的全部记录（含媒体文件），本机原创记录不受影响。确定？")
             .setPositiveButton("删除") { _, _ ->

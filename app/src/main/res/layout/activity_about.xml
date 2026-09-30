@@ -10,40 +10,50 @@
         android:layout_width="match_parent"
         android:layout_height="40dp"
         android:minHeight="0dp"
-        android:background="@color/purple_500"
+        android:background="?attr/colorPrimary"
         app:navigationIcon="?attr/homeAsUpIndicator"
-        app:navigationIconTint="@color/white"
+        app:navigationIconTint="?attr/colorOnPrimary"
         app:title="关于"
-        app:titleTextColor="@color/white" />
+        app:titleTextColor="?attr/colorOnPrimary" />
 
-    <!-- 应用信息 -->
+    <!-- 应用信息：居中图标 + 名称 + 版本 + 简介 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:gravity="center_horizontal"
         android:orientation="vertical"
         android:paddingHorizontal="16dp"
-        android:paddingTop="16dp">
+        android:paddingTop="24dp"
+        android:paddingBottom="8dp">
+
+        <ImageView
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:contentDescription="应用图标"
+            android:src="@mipmap/ic_launcher" />
 
         <TextView
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
             android:text="共享剪贴-卢"
             android:textColor="@color/text_primary"
-            android:textSize="18sp"
+            android:textSize="20sp"
             android:textStyle="bold" />
 
         <TextView
             android:id="@+id/tvVersion"
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
             android:textColor="@color/text_secondary"
             android:textSize="13sp" />
 
         <TextView
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
+            android:layout_marginTop="6dp"
+            android:gravity="center"
             android:text="安卓本地剪贴板记录工具：悬浮球 + 自动记录 + 局域网同步与文件共享"
             android:textColor="@color/text_hint"
             android:textSize="12sp" />

@@ -11,11 +11,11 @@
         android:layout_width="match_parent"
         android:layout_height="40dp"
         android:minHeight="0dp"
-        android:background="@color/purple_500"
+        android:background="?attr/colorPrimary"
         app:navigationIcon="?attr/homeAsUpIndicator"
-        app:navigationIconTint="@color/white"
+        app:navigationIconTint="?attr/colorOnPrimary"
         app:title="同步设置"
-        app:titleTextColor="@color/white" />
+        app:titleTextColor="?attr/colorOnPrimary" />
 
     <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"

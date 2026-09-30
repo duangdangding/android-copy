@@ -1,6 +1,6 @@
 package com.clipditto.app.ui
 
-import android.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -18,6 +18,7 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.SwitchCompat
 import androidx.lifecycle.lifecycleScope
 import com.clipditto.app.R
+import com.clipditto.app.util.EdgeToEdge
 import com.clipditto.app.backup.ConfigManager
 import com.clipditto.app.data.ClipRepository
 import com.clipditto.app.service.ClipboardService
@@ -65,6 +66,8 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
+        // 沉浸式：Toolbar 背景延伸到状态栏，底部避开手势导航条
+        EdgeToEdge.apply(this, findViewById(R.id.toolbar))
         repo = ClipRepository(this)
 
         findViewById<MaterialToolbar>(R.id.toolbar)
@@ -103,6 +106,17 @@ class SettingsActivity : AppCompatActivity() {
             )
         }
 
+        // ---- 长按触感反馈（默认开） ----
+        findViewById<SwitchCompat>(R.id.swHaptic).setOnClickListener {
+            val now = findViewById<SwitchCompat>(R.id.swHaptic).isChecked
+            AppSettings.setHapticEnabled(this, now)
+            Toast.makeText(
+                this,
+                if (now) "已开启长按触感反馈" else "已关闭长按触感反馈",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
         // ---- 悬浮面板 ----
         findViewById<SwitchCompat>(R.id.swRememberPanelSize).setOnClickListener {
             val now = findViewById<SwitchCompat>(R.id.swRememberPanelSize).isChecked
@@ -127,6 +141,25 @@ class SettingsActivity : AppCompatActivity() {
         // ---- 外观主题 ----
         findViewById<android.view.View>(R.id.rowTheme).setOnClickListener { showThemeDialog() }
 
+        // ---- 跟随系统主题色（Material You 动态取色，仅 Android 12+，重启应用后生效） ----
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            val swDynamic = findViewById<SwitchCompat>(R.id.swDynamicColor)
+            swDynamic.isChecked = AppSettings.isDynamicColor(this)
+            swDynamic.setOnClickListener {
+                val now = swDynamic.isChecked
+                AppSettings.setDynamicColor(this, now)
+                Toast.makeText(
+                    this,
+                    if (now) "已开启跟随系统主题色，重启应用后生效"
+                    else "已恢复默认紫色主题，重启应用后生效",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        } else {
+            findViewById<android.view.View>(R.id.rowDynamicColor).visibility =
+                android.view.View.GONE
+        }
+
         // ---- 记录规则 ----
         findViewById<android.view.View>(R.id.rowMaxRecords).setOnClickListener { showMaxRecordsDialog() }
         findViewById<android.view.View>(R.id.rowRetention).setOnClickListener { showRetentionDialog() }
@@ -144,6 +177,8 @@ class SettingsActivity : AppCompatActivity() {
         refreshBallSwitch()
         refreshBallSizeRow()
         refreshBallAlphaRow()
+        findViewById<SwitchCompat>(R.id.swHaptic).isChecked =
+            AppSettings.isHapticEnabled(this)
         refreshPanelSwitch()
         refreshPanelAlphaRow()
         refreshThemeRow()
@@ -216,7 +251,7 @@ class SettingsActivity : AppCompatActivity() {
             addView(tvValue)
             addView(seek)
         }
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(title)
             .setView(container)
             .setPositiveButton("确定") { _, _ ->
@@ -255,7 +290,7 @@ class SettingsActivity : AppCompatActivity() {
             AppCompatDelegate.MODE_NIGHT_NO,
             AppCompatDelegate.MODE_NIGHT_YES
         )
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("外观主题")
             .setItems(labels) { _, which ->
                 AppSettings.setThemeMode(this, modes[which])
@@ -277,7 +312,7 @@ class SettingsActivity : AppCompatActivity() {
         val current = repo.getMaxRecords()
         val presets = arrayOf("不限制（默认）", "100 条", "300 条", "500 条", "1000 条", "自定义…")
         val values = intArrayOf(0, 100, 300, 500, 1000, -1)
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("最多保存记录数（当前：${if (current == 0) "不限制" else "$current 条"}）\n超出后自动删除最旧的非收藏记录")
             .setItems(presets) { _, which ->
                 val v = values[which]
@@ -301,7 +336,7 @@ class SettingsActivity : AppCompatActivity() {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
             hint = "输入条数，0 表示不限制"
         }
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("自定义数量上限")
             .setView(input)
             .setPositiveButton("确定") { _, _ ->
@@ -328,7 +363,7 @@ class SettingsActivity : AppCompatActivity() {
         val current = AppSettings.getRetentionDays(this)
         val presets = arrayOf("不限制（默认）", "1 天", "7 天", "30 天", "90 天", "自定义…")
         val values = intArrayOf(0, 1, 7, 30, 90, -1)
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("数据保留天数（当前：${if (current == 0) "不限制" else "$current 天"}）\n超过天数的非收藏记录会被自动删除")
             .setItems(presets) { _, which ->
                 val v = values[which]
@@ -342,7 +377,7 @@ class SettingsActivity : AppCompatActivity() {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
             hint = "输入天数，0 表示不限制"
         }
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("自定义保留天数")
             .setView(input)
             .setPositiveButton("确定") { _, _ ->
@@ -389,7 +424,7 @@ class SettingsActivity : AppCompatActivity() {
         val hasDir = AppSettings.getBackupTreeUri(this) != null
         val items = if (hasDir) arrayOf("重新选择文件夹", "清除（恢复每次手动选位置）")
         else arrayOf("选择文件夹")
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("数据库/配置保存文件夹")
             .setItems(items) { _, which ->
                 when {
@@ -437,7 +472,7 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun doImportConfig(uri: Uri) {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("导入配置")
             .setMessage("配置将覆盖当前设置项（不含剪贴板记录），继续？")
             .setPositiveButton("导入") { _, _ ->

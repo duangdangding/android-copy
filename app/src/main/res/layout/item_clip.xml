@@ -1,95 +1,125 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- 列表项浮卡：MaterialCardView（圆角 + 柔和阴影），点击涟漪走 foreground；
+     卡片底色由 HistoryAdapter 按收藏状态设置（普通 card_surface / 收藏浅金）。
+     主界面与悬浮面板共用本布局，控件 ID 勿改 -->
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginHorizontal="4dp"
     android:layout_marginBottom="10dp"
-    android:background="@drawable/bg_item_ripple"
-    android:gravity="center_vertical"
-    android:orientation="horizontal"
-    android:padding="12dp">
-
-    <TextView
-        android:id="@+id/tvType"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginEnd="10dp"
-        android:background="@drawable/bg_badge"
-        android:paddingHorizontal="7dp"
-        android:paddingVertical="2dp"
-        android:text="文"
-        android:textColor="@color/white"
-        android:textSize="12sp"
-        android:textStyle="bold" />
-
-    <ImageView
-        android:id="@+id/ivThumb"
-        android:layout_width="56dp"
-        android:layout_height="56dp"
-        android:layout_marginEnd="10dp"
-        android:background="@drawable/bg_thumb_round"
-        android:clipToOutline="true"
-        android:scaleType="centerCrop"
-        android:visibility="gone" />
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackground"
+    app:cardBackgroundColor="@color/card_surface"
+    app:cardCornerRadius="14dp"
+    app:cardElevation="1.5dp">
 
     <LinearLayout
-        android:layout_width="0dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:orientation="vertical">
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="14dp">
 
         <TextView
-            android:id="@+id/tvContent"
-            android:layout_width="match_parent"
+            android:id="@+id/tvType"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:maxLines="3"
-            android:textColor="@color/text_primary"
-            android:textSize="14sp" />
+            android:layout_marginEnd="10dp"
+            android:background="@drawable/bg_badge"
+            android:paddingHorizontal="7dp"
+            android:paddingVertical="2dp"
+            android:text="文"
+            android:textColor="@color/white"
+            android:textSize="12sp"
+            android:textStyle="bold" />
 
-        <TextView
-            android:id="@+id/tvTime"
-            android:layout_width="match_parent"
+        <ImageView
+            android:id="@+id/ivThumb"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginEnd="10dp"
+            android:background="@drawable/bg_thumb_round"
+            android:clipToOutline="true"
+            android:scaleType="centerCrop"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:ellipsize="end"
-            android:singleLine="true"
-            android:textColor="@color/text_tertiary"
-            android:textSize="11sp" />
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tvContent"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="3"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/tvTime"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:singleLine="true"
+                android:textColor="@color/text_tertiary"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- 网址类动作：M3 文字按钮竖排，视觉比实心按钮轻；可见性由 ItemActionButtons 控制 -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+
+            <Button
+                android:id="@+id/btnOpenUrl"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:paddingHorizontal="4dp"
+                android:text="打开"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/btnOpenAlt"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:paddingHorizontal="4dp"
+                android:text="打开"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/btnOpenBrowser"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:paddingHorizontal="4dp"
+                android:text="浏览器"
+                android:textSize="12sp"
+                android:visibility="gone" />
+        </LinearLayout>
     </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="6dp"
-        android:gravity="center_horizontal"
-        android:orientation="vertical">
-
-        <Button
-            android:id="@+id/btnOpenUrl"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:minHeight="0dp"
-            android:text="打开"
-            android:textSize="12sp"
-            android:visibility="gone" />
-
-        <Button
-            android:id="@+id/btnOpenAlt"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:minHeight="0dp"
-            android:text="打开"
-            android:textSize="12sp"
-            android:visibility="gone" />
-
-        <Button
-            android:id="@+id/btnOpenBrowser"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:minHeight="0dp"
-            android:text="浏览器"
-            android:textSize="12sp"
-            android:visibility="gone" />
-    </LinearLayout>
-</LinearLayout>
+</com.google.android.material.card.MaterialCardView>

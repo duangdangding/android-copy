@@ -13,11 +13,11 @@
         android:layout_width="match_parent"
         android:layout_height="40dp"
         android:minHeight="0dp"
-        android:background="@color/purple_500"
+        android:background="?attr/colorPrimary"
         app:navigationIcon="?attr/homeAsUpIndicator"
-        app:navigationIconTint="@color/white"
+        app:navigationIconTint="?attr/colorOnPrimary"
         app:title="设备同步"
-        app:titleTextColor="@color/white"
+        app:titleTextColor="?attr/colorOnPrimary"
         app:menu="@menu/menu_devices" />
 
     <androidx.core.widget.NestedScrollView
@@ -31,18 +31,56 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <!-- 文件共享入口 -->
-            <TextView
-                android:id="@+id/tvFileShare"
+            <!-- 文件共享入口：图标 + 标题/副标题 + 右箭头，对齐设置页条目风格 -->
+            <LinearLayout
+                android:id="@+id/rowFileShare"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:background="?attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true"
                 android:gravity="center_vertical"
-                android:minHeight="48dp"
+                android:orientation="horizontal"
                 android:paddingHorizontal="16dp"
-                android:text="文件共享：局域网免配对互传文件  ›"
-                android:textColor="@color/accent_link"
-                android:textSize="14sp" />
+                android:paddingVertical="12dp">
+
+                <ImageView
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:contentDescription="文件共享"
+                    android:src="@drawable/ic_share" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="14dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="文件共享"
+                        android:textColor="@color/text_primary"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="局域网免配对互传文件"
+                        android:textColor="@color/text_hint"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="›"
+                    android:textColor="@color/text_tertiary"
+                    android:textSize="18sp" />
+            </LinearLayout>
 
             <View
                 android:layout_width="match_parent"
@@ -85,27 +123,16 @@
                     android:paddingHorizontal="@dimen/scan_btn_padding_h"
                     android:text="输IP添加"
                     android:textSize="@dimen/scan_btn_text_size" />
-
-                <Button
-                    android:id="@+id/btnSweep"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp"
-                    android:minWidth="@dimen/scan_btn_min_w"
-                    android:minHeight="@dimen/scan_btn_min_h"
-                    android:paddingHorizontal="@dimen/scan_btn_padding_h"
-                    android:text="深度扫描"
-                    android:textSize="@dimen/scan_btn_text_size" />
             </LinearLayout>
 
-            <!-- 诊断信息：本机广播状态 + 扫描状态（配置项在设置页） -->
+            <!-- 诊断信息：默认次要色，出现异常时由代码切换为 danger 红字（配置项在设置页） -->
             <TextView
                 android:id="@+id/tvDiag"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:paddingHorizontal="16dp"
                 android:paddingVertical="2dp"
-                android:textColor="@color/danger"
+                android:textColor="@color/text_secondary"
                 android:textSize="12sp" />
 
             <TextView

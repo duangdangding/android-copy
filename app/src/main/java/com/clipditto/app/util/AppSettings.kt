@@ -47,6 +47,18 @@ object AppSettings {
         prefs(context).edit().putInt(KEY_BALL_ALPHA, percent.coerceIn(30, 100)).apply()
     }
 
+    // ---------------- 操作反馈 ----------------
+
+    private const val KEY_HAPTIC_ENABLED = "haptic_enabled"
+
+    /** 长按触感反馈（长按记录/悬浮球时震动提示），默认开启 */
+    fun isHapticEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_HAPTIC_ENABLED, true)
+
+    fun setHapticEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_HAPTIC_ENABLED, enabled).apply()
+    }
+
     // ---------------- 悬浮面板 ----------------
 
     private const val KEY_REMEMBER_PANEL_SIZE = "remember_panel_size"
@@ -84,6 +96,16 @@ object AppSettings {
     /** 按设置应用主题（App 启动时调用一次即可） */
     fun applyTheme(context: Context) {
         AppCompatDelegate.setDefaultNightMode(getThemeMode(context))
+    }
+
+    private const val KEY_DYNAMIC_COLOR = "dynamic_color"
+
+    /** 跟随系统主题色（Material You 动态取色，仅 Android 12+ 有效），默认关闭 */
+    fun isDynamicColor(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_DYNAMIC_COLOR, false)
+
+    fun setDynamicColor(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_DYNAMIC_COLOR, enabled).apply()
     }
 
     // ---------------- 记录规则 ----------------

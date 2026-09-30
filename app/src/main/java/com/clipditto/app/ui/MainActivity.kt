@@ -1,16 +1,19 @@
 package com.clipditto.app.ui
 
-import android.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import android.annotation.SuppressLint
 import android.app.DatePickerDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
@@ -19,6 +22,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.widget.addTextChangedListener
@@ -27,9 +31,12 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.clipditto.app.BuildConfig
 import com.clipditto.app.R
+import com.clipditto.app.util.EdgeToEdge
 import com.clipditto.app.backup.BackupManager
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.snackbar.Snackbar
 import com.clipditto.app.data.ClipItem
 import com.clipditto.app.data.ClipRepository
@@ -63,8 +70,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var repo: ClipRepository
     private lateinit var adapter: HistoryAdapter
     private lateinit var tvEmpty: TextView
-    private lateinit var btnListen: Button
-    private lateinit var btnBall: Button
+    private lateinit var btnListen: MaterialButton
+    private lateinit var btnBall: MaterialButton
 
     private var allClips: List<ClipItem> = emptyList()
     private var query: String = ""
@@ -91,9 +98,12 @@ class MainActivity : AppCompatActivity() {
             uri?.let { doImport(it) }
         }
 
+    @SuppressLint("ClickableViewAccessibility")   // 搜索框清除图标用 OnTouchListener 判定点击区域
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        // 沉浸式：Toolbar 背景延伸到状态栏，底部避开手势导航条
+        EdgeToEdge.apply(this, findViewById(R.id.toolbar))
 
         repo = ClipRepository(this)
         tvEmpty = findViewById(R.id.tvEmpty)
@@ -135,10 +145,24 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 模糊搜索
-        findViewById<EditText>(R.id.etSearch).addTextChangedListener { text ->
+        // 模糊搜索：输入即过滤；有内容时右侧出现「清除」图标，点击一键清空
+        val etSearch = findViewById<EditText>(R.id.etSearch)
+        etSearch.addTextChangedListener { text ->
             query = text?.toString() ?: ""
+            updateSearchClearIcon(etSearch)
             applyFilter()
+        }
+        updateSearchClearIcon(etSearch)
+        etSearch.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_UP) {
+                val end = etSearch.compoundDrawablesRelative[2]
+                // 触点落在右侧清除图标范围内时清空搜索词
+                if (end != null && event.x >= etSearch.width - etSearch.paddingEnd - end.bounds.width()) {
+                    etSearch.text.clear()
+                    return@setOnTouchListener true
+                }
+            }
+            false
         }
 
         btnListen.setOnClickListener { toggleListen() }
@@ -276,11 +300,29 @@ class MainActivity : AppCompatActivity() {
     // ---------------- 服务开关（监听与悬浮球相互独立） ----------------
 
     private fun refreshListenButton() {
-        btnListen.text = if (ClipboardService.isRunning) "关闭监听" else "开启监听"
+        val running = ClipboardService.isRunning
+        btnListen.text = if (running) "关闭监听" else "开启监听"
+        btnListen.setIconResource(if (running) R.drawable.ic_pause else R.drawable.ic_play)
+        styleStateButton(btnListen, running)
     }
 
     private fun refreshBallButton() {
-        btnBall.text = "悬浮球：${if (AppSettings.isBallEnabled(this)) "开" else "关"}"
+        val on = AppSettings.isBallEnabled(this)
+        btnBall.text = "悬浮球：${if (on) "开" else "关"}"
+        styleStateButton(btnBall, on)
+    }
+
+    /** 高频开关按钮状态化：开 = 主色实心白字；关 = 灰底深字，一眼看出当前状态 */
+    private fun styleStateButton(btn: MaterialButton, on: Boolean) {
+        val bgAttr = if (on) com.google.android.material.R.attr.colorPrimary
+            else com.google.android.material.R.attr.colorSurfaceVariant
+        val fgAttr = if (on) com.google.android.material.R.attr.colorOnPrimary
+            else com.google.android.material.R.attr.colorOnSurfaceVariant
+        val bg = MaterialColors.getColor(btn, bgAttr)
+        val fg = MaterialColors.getColor(btn, fgAttr)
+        btn.backgroundTintList = ColorStateList.valueOf(bg)
+        btn.setTextColor(fg)
+        btn.iconTint = ColorStateList.valueOf(fg)
     }
 
     /** 监听开关：只启动/停止剪贴板监听服务；悬浮球是否显示由悬浮球开关决定 */
@@ -324,7 +366,7 @@ class MainActivity : AppCompatActivity() {
     /** 检查悬浮窗权限，未授权时弹引导；已授权返回 true */
     private fun ensureOverlayPermission(): Boolean {
         if (Settings.canDrawOverlays(this)) return true
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("需要悬浮窗权限")
             .setMessage("悬浮球和剪贴板面板需要「显示在其他应用上层」权限，是否前往开启？")
             .setPositiveButton("去开启") { _, _ ->
@@ -467,14 +509,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** 搜索框右侧清除图标：有内容时显示、无内容隐藏（左侧放大镜保持在 XML 中设置） */
+    private fun updateSearchClearIcon(et: EditText) {
+        val start = et.compoundDrawablesRelative[0]
+        val end = if (et.text.isNullOrEmpty()) null
+            else AppCompatResources.getDrawable(this, R.drawable.ic_clear)
+        et.setCompoundDrawablesRelativeWithIntrinsicBounds(start, null, end, null)
+    }
+
     private fun confirmDeleteItem(item: ClipItem) {
-        val dialog = AlertDialog.Builder(this)
+        val dialog = MaterialAlertDialogBuilder(this)
             .setMessage("删除这条记录？")
             .setPositiveButton("删除") { _, _ -> deleteWithUndo(item) }
             .setNegativeButton("取消", null)
             .show()
         // 删除按钮红色强调
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+        dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE)
             ?.setTextColor(getColor(R.color.danger))
     }
 
@@ -527,7 +577,7 @@ class MainActivity : AppCompatActivity() {
             "自定义时间段",
             "全部清空"
         )
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("按时间删除记录")
             .setItems(options) { _, which ->
                 val now = System.currentTimeMillis()
@@ -580,7 +630,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun confirmDeleteRange(start: Long, end: Long, label: String) {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("确认删除")
             .setMessage("将删除「$label」的记录，且不可恢复，确定？")
             .setPositiveButton("删除") { _, _ ->
@@ -588,7 +638,7 @@ class MainActivity : AppCompatActivity() {
                     val favCount = repo.countFavoritesBetween(start, end)
                     if (favCount > 0) {
                         // 时间段内有收藏记录：询问是否一并删除
-                        AlertDialog.Builder(this@MainActivity)
+                        MaterialAlertDialogBuilder(this@MainActivity)
                             .setTitle("包含收藏记录")
                             .setMessage("「$label」内有 $favCount 条收藏记录，是否一并删除？")
                             .setPositiveButton("一并删除") { _, _ ->
@@ -682,7 +732,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun doImport(uri: Uri) {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("导入备份")
             .setMessage("备份中的记录将合并到当前列表（不会覆盖现有记录），继续？")
             .setPositiveButton("导入") { _, _ ->

@@ -1,6 +1,6 @@
 package com.clipditto.app.ui
 
-import android.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
@@ -31,6 +31,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.clipditto.app.R
+import com.clipditto.app.util.EdgeToEdge
 import com.clipditto.app.data.ClipDatabase
 import com.clipditto.app.data.TransferRecord
 import com.clipditto.app.share.FileShareClient
@@ -92,6 +93,8 @@ class FileShareActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_file_share)
+        // 沉浸式：Toolbar 背景延伸到状态栏，底部避开手势导航条
+        EdgeToEdge.apply(this, findViewById(R.id.toolbar))
 
         FileShareManager.init(this)
         client = FileShareClient(LanSyncManager.settings())
@@ -250,7 +253,7 @@ class FileShareActivity : AppCompatActivity() {
             view.findViewById<TextView>(R.id.tvRecvFileSize).text =
                 FileShareManager.formatSize(p.fileSize)
 
-            val dialog = AlertDialog.Builder(this)
+            val dialog = MaterialAlertDialogBuilder(this)
                 .setView(view)
                 .setCancelable(false)
                 .create()
@@ -285,7 +288,7 @@ class FileShareActivity : AppCompatActivity() {
             inputType = InputType.TYPE_CLASS_TEXT
             hint = "对方 IP，如 192.168.1.23 或 192.168.1.23:8765"
         }
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("输入 IP 发送")
             .setMessage("输入对方设备的局域网 IP（可带端口，默认 ${LanSettings.DEFAULT_PORT}），然后选择要发送的文件")
             .setView(input)
@@ -358,7 +361,7 @@ class FileShareActivity : AppCompatActivity() {
         view.findViewById<TextView>(R.id.tvSendTarget).text = "发送到 $host:$port"
         tvCount.text = "0/${uris.size}"
 
-        val dialog = AlertDialog.Builder(this)
+        val dialog = MaterialAlertDialogBuilder(this)
             .setView(view)
             .setCancelable(false)
             .create()
@@ -418,7 +421,7 @@ class FileShareActivity : AppCompatActivity() {
             }
         }
 
-        val dialog = AlertDialog.Builder(this).setView(view).create()
+        val dialog = MaterialAlertDialogBuilder(this).setView(view).create()
         val btn = view.findViewById<Button>(R.id.btnFsResultOk)
         btn.setOnClickListener { dialog.dismiss() }
         dialog.show()
@@ -502,7 +505,7 @@ class FileShareActivity : AppCompatActivity() {
             append("接收时间：${fmt.format(Date(r.timestamp))}\n")
             append("保存位置：${displayPath(r.savedPath)}")
         }
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("文件详情")
             .setMessage(msg)
             .setPositiveButton("打开文件") { _, _ -> openRecordFile(r) }
@@ -579,7 +582,7 @@ class FileShareActivity : AppCompatActivity() {
     private fun confirmDeleteRecords(targets: List<TransferRecord>) {
         if (targets.isEmpty()) return
         val title = if (targets.size == 1) "删除该记录？" else "删除选中的 ${targets.size} 条记录？"
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(title)
             .setMessage("是否同时删除已接收的文件？")
             .setPositiveButton("删除记录和文件") { _, _ -> deleteRecords(targets, deleteFile = true) }

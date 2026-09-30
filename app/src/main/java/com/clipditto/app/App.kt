@@ -4,6 +4,7 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import com.clipditto.app.sync.LanSyncManager
+import com.google.android.material.color.DynamicColors
 
 class App : Application() {
 
@@ -12,6 +13,11 @@ class App : Application() {
         instance = this
         // 外观主题：默认跟随系统，按设置应用
         runCatching { com.clipditto.app.util.AppSettings.applyTheme(this) }
+        // 动态取色（Material You）：设置开启时，Android 12+ 的主题色跟随壁纸
+        runCatching {
+            if (com.clipditto.app.util.AppSettings.isDynamicColor(this))
+                DynamicColors.applyToActivitiesIfAvailable(this)
+        }
         createNotificationChannel()
         // Shizuku 剪贴板通道：监听 binder 到来/死亡，可用时自动绑定
         runCatching { com.clipditto.app.service.ShizukuClipboard.init() }

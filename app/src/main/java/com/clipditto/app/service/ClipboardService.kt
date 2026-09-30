@@ -20,13 +20,16 @@ import android.provider.Settings
 import android.util.Log
 import android.view.ContextThemeWrapper
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.view.animation.OvershootInterpolator
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageButton
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -51,6 +54,7 @@ import com.clipditto.app.util.FuzzySearch
 import com.clipditto.app.util.MediaFiles
 import com.clipditto.app.util.StorageStats
 import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -538,6 +542,10 @@ class ClipboardService : Service() {
         // 长按悬浮球 = 隐藏悬浮球（后台监听不受影响，可到主页/设置页重新开启）
         val longPressHide = Runnable {
             if (!moved) {
+                // 长按触感反馈（设置里可关）
+                if (AppSettings.isHapticEnabled(this@ClipboardService)) {
+                    view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                }
                 AppSettings.setBallEnabled(this@ClipboardService, false)
                 hidePanel()
                 hideBall()
@@ -554,6 +562,8 @@ class ClipboardService : Service() {
                 MotionEvent.ACTION_DOWN -> {
                     // 触摸即唤醒：取消闲置计时，若已贴边收缩则恢复原状
                     undockBall()
+                    // 按压反馈：球体轻微缩小
+                    view.animate().scaleX(0.85f).scaleY(0.85f).setDuration(120).start()
                     downX = event.rawX; downY = event.rawY
                     startX = params.x; startY = params.y
                     moved = false
@@ -566,6 +576,8 @@ class ClipboardService : Service() {
                     if (!moved && (Math.abs(dx) > 12 || Math.abs(dy) > 12)) {
                         moved = true
                         handler.removeCallbacks(longPressHide)
+                        // 进入拖动：球体恢复原大小
+                        view.animate().scaleX(1f).scaleY(1f).setDuration(150).start()
                     }
                     if (moved) {
                         params.x = startX + dx.toInt()
@@ -576,6 +588,9 @@ class ClipboardService : Service() {
                 }
                 MotionEvent.ACTION_UP -> {
                     handler.removeCallbacks(longPressHide)
+                    // 松手回弹：带过冲的缩放恢复
+                    view.animate().scaleX(1f).scaleY(1f).setDuration(200)
+                        .setInterpolator(OvershootInterpolator()).start()
                     if (!moved && ballView != null) togglePanel()
                     // 松手后重新计时，闲置一段时间自动贴边收缩
                     scheduleBallIdle()
@@ -583,6 +598,7 @@ class ClipboardService : Service() {
                 }
                 MotionEvent.ACTION_CANCEL -> {
                     handler.removeCallbacks(longPressHide)
+                    view.animate().scaleX(1f).scaleY(1f).setDuration(150).start()
                     scheduleBallIdle()
                     true
                 }
@@ -855,8 +871,8 @@ class ClipboardService : Service() {
             onDelete = { item -> showPanelDeleteConfirm(item) }
         )
 
-        view.findViewById<Button>(R.id.btnPanelClose).setOnClickListener { hidePanel() }
-        view.findViewById<Button>(R.id.btnPanelApp).setOnClickListener {
+        view.findViewById<ImageButton>(R.id.btnPanelClose).setOnClickListener { hidePanel() }
+        view.findViewById<ImageButton>(R.id.btnPanelApp).setOnClickListener {
             // 打开主界面前先收起面板，避免悬浮列表盖在主界面上层
             hidePanel()
             startActivity(
@@ -864,10 +880,12 @@ class ClipboardService : Service() {
             )
         }
 
-        // 监听开关：暂停后复制的内容不入库
-        val btnMonitor = view.findViewById<Button>(R.id.btnPanelMonitor)
+        // 监听开关：暂停后复制的内容不入库；图标随状态切换（暂停 ⏸ / 恢复 ▶）
+        val btnMonitor = view.findViewById<ImageButton>(R.id.btnPanelMonitor)
         fun refreshMonitorBtn() {
-            btnMonitor.text = if (isMonitorEnabled()) "暂停" else "恢复"
+            val on = isMonitorEnabled()
+            btnMonitor.setImageResource(if (on) R.drawable.ic_pause else R.drawable.ic_play)
+            btnMonitor.contentDescription = if (on) "暂停监听" else "恢复监听"
         }
         refreshMonitorBtn()
         btnMonitor.setOnClickListener {
@@ -1101,8 +1119,7 @@ class ClipboardService : Service() {
     /** 以服务悬浮窗形式弹窗（Toast 显示不下长文本时使用） */
     private fun showDebugDialog(title: String, message: String) {
         runCatching {
-            val dialog = android.app.AlertDialog
-                .Builder(ContextThemeWrapper(this, R.style.Theme_ClipDitto))
+            val dialog = MaterialAlertDialogBuilder(ContextThemeWrapper(this, R.style.Theme_ClipDitto))
                 .setTitle(title)
                 .setMessage(message)
                 .setPositiveButton("知道了", null)
@@ -1118,7 +1135,7 @@ class ClipboardService : Service() {
     private fun showPanelDeleteConfirm(item: ClipItem) {
         runCatching {
             val themedCtx = ContextThemeWrapper(this, R.style.Theme_ClipDitto)
-            val dialog = android.app.AlertDialog.Builder(themedCtx)
+            val dialog = MaterialAlertDialogBuilder(themedCtx)
                 .setMessage("删除这条记录？")
                 .setPositiveButton("删除") { _, _ ->
                     scope.launch {
@@ -1133,7 +1150,7 @@ class ClipboardService : Service() {
             dialog.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
             dialog.show()
             // 删除按钮红色强调
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE)
                 ?.setTextColor(themedCtx.getColor(R.color.danger))
         }
     }

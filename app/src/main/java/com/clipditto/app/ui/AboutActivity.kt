@@ -1,6 +1,6 @@
 package com.clipditto.app.ui
 
-import android.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.content.Intent
 import android.graphics.Paint
 import android.net.Uri
@@ -16,6 +16,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.clipditto.app.BuildConfig
 import com.clipditto.app.R
+import com.clipditto.app.util.EdgeToEdge
 import com.clipditto.app.util.UpdateChecker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -39,6 +40,8 @@ class AboutActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_about)
+        // 沉浸式：Toolbar 背景延伸到状态栏，底部避开手势导航条
+        EdgeToEdge.apply(this, findViewById(R.id.toolbar))
 
         findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
             .setNavigationOnClickListener { finish() }
@@ -134,7 +137,7 @@ class AboutActivity : AppCompatActivity() {
             addView(tvProgress)
         }
         val cancelled = AtomicBoolean(false)
-        val dialog = AlertDialog.Builder(this)
+        val dialog = MaterialAlertDialogBuilder(this)
             .setTitle("下载更新 ${info.tag}")
             .setView(box)
             .setCancelable(false)
@@ -196,7 +199,7 @@ class AboutActivity : AppCompatActivity() {
     private fun installApk(apk: File) {
         if (!packageManager.canRequestPackageInstalls()) {
             pendingInstallApk = apk
-            AlertDialog.Builder(this)
+            MaterialAlertDialogBuilder(this)
                 .setTitle("需要安装权限")
                 .setMessage("安装更新需要「安装未知应用」权限，请在打开的页面中允许本应用安装")
                 .setPositiveButton("去授权") { _, _ ->

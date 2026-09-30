@@ -11,11 +11,11 @@
         android:layout_width="match_parent"
         android:layout_height="40dp"
         android:minHeight="0dp"
-        android:background="@color/purple_500"
+        android:background="?attr/colorPrimary"
         app:navigationIcon="?attr/homeAsUpIndicator"
-        app:navigationIconTint="@color/white"
+        app:navigationIconTint="?attr/colorOnPrimary"
         app:title="设置"
-        app:titleTextColor="@color/white" />
+        app:titleTextColor="?attr/colorOnPrimary" />
 
     <ScrollView
         android:layout_width="match_parent"
@@ -30,6 +30,7 @@
             <!-- 悬浮球 -->
             <TextView
                 style="@style/SettingsSectionTitle"
+                android:drawableStart="@drawable/ic_ball"
                 android:text="悬浮球" />
 
             <LinearLayout
@@ -141,9 +142,49 @@
                     android:textSize="13sp" />
             </LinearLayout>
 
+            <!-- 长按触感反馈：长按记录 / 悬浮球时震动提示 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?attr/selectableItemBackground"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="10dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="长按触感反馈"
+                        android:textColor="@color/text_primary"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="长按记录弹出菜单、长按悬浮球隐藏时震动提示"
+                        android:textColor="@color/text_hint"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/swHaptic"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp" />
+            </LinearLayout>
+
             <!-- 悬浮面板 -->
             <TextView
                 style="@style/SettingsSectionTitle"
+                android:drawableStart="@drawable/ic_sec_panel"
                 android:text="悬浮面板" />
 
             <LinearLayout
@@ -215,6 +256,7 @@
             <!-- 外观主题 -->
             <TextView
                 style="@style/SettingsSectionTitle"
+                android:drawableStart="@drawable/ic_sec_palette"
                 android:text="外观主题" />
 
             <LinearLayout
@@ -245,9 +287,50 @@
                     android:textSize="13sp" />
             </LinearLayout>
 
+            <!-- Android 12+：主题色跟随壁纸（Material You 动态取色），低版本整行隐藏 -->
+            <LinearLayout
+                android:id="@+id/rowDynamicColor"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?attr/selectableItemBackground"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="10dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="跟随系统主题色"
+                        android:textColor="@color/text_primary"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="主题色跟随壁纸自动变化（Material You），重启应用后生效"
+                        android:textColor="@color/text_hint"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/swDynamicColor"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp" />
+            </LinearLayout>
+
             <!-- 记录规则 -->
             <TextView
                 style="@style/SettingsSectionTitle"
+                android:drawableStart="@drawable/ic_sec_rule"
                 android:text="记录规则" />
 
             <LinearLayout
@@ -313,6 +396,7 @@
             <!-- 存储位置 -->
             <TextView
                 style="@style/SettingsSectionTitle"
+                android:drawableStart="@drawable/ic_sec_storage"
                 android:text="存储位置" />
 
             <LinearLayout

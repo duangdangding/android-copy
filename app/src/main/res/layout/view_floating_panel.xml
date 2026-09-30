@@ -6,7 +6,7 @@
     android:orientation="vertical"
     android:padding="10dp">
 
-    <!-- 标题栏：按住可拖动面板 -->
+    <!-- 标题栏：按住可拖动面板；左侧圆点手柄提示可拖，右侧为图标按钮（暂停/管理/收起） -->
     <LinearLayout
         android:id="@+id/panelHeader"
         android:layout_width="match_parent"
@@ -18,45 +18,44 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:drawableStart="@drawable/ic_drag_handle"
+            android:drawablePadding="6dp"
             android:ellipsize="end"
+            android:gravity="center_vertical"
             android:singleLine="true"
-            android:text="⠿ 剪贴板记录"
+            android:text="剪贴板记录"
             android:textColor="@color/text_primary"
             android:textSize="14sp"
             android:textStyle="bold" />
 
-        <Button
+        <ImageButton
             android:id="@+id/btnPanelMonitor"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:minWidth="0dp"
-            android:minHeight="0dp"
-            android:paddingHorizontal="6dp"
-            android:singleLine="true"
-            android:text="暂停"
-            android:textSize="11sp" />
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="暂停监听"
+            android:padding="5dp"
+            android:src="@drawable/ic_pause" />
 
-        <Button
+        <ImageButton
             android:id="@+id/btnPanelApp"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:minWidth="0dp"
-            android:minHeight="0dp"
-            android:paddingHorizontal="6dp"
-            android:singleLine="true"
-            android:text="管理"
-            android:textSize="11sp" />
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:layout_marginStart="2dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="打开主界面"
+            android:padding="5dp"
+            android:src="@drawable/ic_manage" />
 
-        <Button
+        <ImageButton
             android:id="@+id/btnPanelClose"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:minWidth="0dp"
-            android:minHeight="0dp"
-            android:paddingHorizontal="6dp"
-            android:singleLine="true"
-            android:text="收起"
-            android:textSize="11sp" />
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:layout_marginStart="2dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="收起面板"
+            android:padding="5dp"
+            android:src="@drawable/ic_collapse" />
     </LinearLayout>
 
     <EditText
@@ -64,18 +63,23 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
-        android:background="@drawable/bg_item"
+        android:background="@drawable/bg_search_capsule"
+        android:drawableStart="@drawable/ic_search"
+        android:drawablePadding="6dp"
         android:hint="搜索剪贴板内容…"
         android:imeOptions="actionSearch"
         android:inputType="text"
         android:maxLines="1"
-        android:padding="8dp"
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="8dp"
         android:textSize="14sp" />
 
     <TextView
         android:id="@+id/tvPanelEmpty"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:drawableTop="@drawable/ic_empty_clipboard"
+        android:drawablePadding="10dp"
         android:gravity="center"
         android:padding="24dp"
         android:text="暂无记录"

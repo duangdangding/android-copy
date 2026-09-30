@@ -1,6 +1,6 @@
 package com.clipditto.app.ui
 
-import android.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -18,6 +18,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.clipditto.app.R
+import com.clipditto.app.util.EdgeToEdge
 import com.clipditto.app.sync.LanSettings
 import com.clipditto.app.sync.LanSyncManager
 import com.clipditto.app.sync.relay.RelaySyncManager
@@ -50,6 +51,8 @@ class LanSyncSettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_lan_sync_settings)
+        // 沉浸式：Toolbar 背景延伸到状态栏，底部避开手势导航条
+        EdgeToEdge.apply(this, findViewById(R.id.toolbar))
 
         LanSyncManager.init(this)
         RelaySyncManager.init(this)
@@ -130,7 +133,7 @@ class LanSyncSettingsActivity : AppCompatActivity() {
             tv.visibility = View.VISIBLE
             tv.text = "本机配对码：${s.pairingToken}（其他设备配对时需输入）"
             tv.setOnClickListener {
-                AlertDialog.Builder(this)
+                MaterialAlertDialogBuilder(this)
                     .setTitle("重置配对码")
                     .setMessage("重置后，已配对的设备需要用新配对码重新配对。确定？")
                     .setPositiveButton("重置") { _, _ ->
@@ -164,7 +167,7 @@ class LanSyncSettingsActivity : AppCompatActivity() {
         val tvTitle = view.findViewById<TextView>(R.id.tvBlacklistTitle)
         val recycler = view.findViewById<RecyclerView>(R.id.blacklistRecycler)
         val tvEmpty = view.findViewById<TextView>(R.id.tvBlacklistEmpty)
-        val dialog = AlertDialog.Builder(this).setView(view).create()
+        val dialog = MaterialAlertDialogBuilder(this).setView(view).create()
 
         lateinit var blockedAdapter: BlockedAdapter
         fun refreshBlocked() {
@@ -176,7 +179,7 @@ class LanSyncSettingsActivity : AppCompatActivity() {
 
         blockedAdapter = BlockedAdapter { entry ->
             val (id, info) = entry
-            AlertDialog.Builder(this)
+            MaterialAlertDialogBuilder(this)
                 .setMessage("把「${info.name.ifBlank { "未知设备" }}」移出黑名单？\n移出后双方可重新扫描和配对")
                 .setPositiveButton("移出") { _, _ ->
                     LanSyncManager.unblockDevice(id)
@@ -210,7 +213,7 @@ class LanSyncSettingsActivity : AppCompatActivity() {
             filters = arrayOf(android.text.InputFilter.LengthFilter(MAX_NAME_LENGTH))
             hint = "最多 $MAX_NAME_LENGTH 个字"
         }
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("本机名称")
             .setMessage("这个名字会显示在其他设备的列表里（最多 $MAX_NAME_LENGTH 个字），修改后对方列表会自动更新")
             .setView(input)
@@ -239,7 +242,7 @@ class LanSyncSettingsActivity : AppCompatActivity() {
             setText(s.serverPort.toString())
             setSelection(text.length)
         }
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("服务端口")
             .setMessage("本机 HTTP 服务监听的端口（1024~65535），默认 8765。修改后服务会立即重启，对端通过扫描自动获取新端口，无需手动填写。")
             .setView(input)
@@ -289,7 +292,7 @@ class LanSyncSettingsActivity : AppCompatActivity() {
     private fun showSyncIntervalDialog() {
         val presets = intArrayOf(10, 30, 60, 300, 600)
         val labels = presets.map { formatInterval(it) }.toTypedArray() + "自定义…"
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("自动同步间隔")
             .setItems(labels) { _, which ->
                 if (which < presets.size) {
@@ -313,7 +316,7 @@ class LanSyncSettingsActivity : AppCompatActivity() {
             setPadding(pad, pad / 2, pad, 0)
             addView(input)
         }
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("自定义同步间隔")
             .setView(container)
             .setPositiveButton("确定") { _, _ ->
@@ -343,7 +346,7 @@ class LanSyncSettingsActivity : AppCompatActivity() {
         val items = if (hasDir) arrayOf("重新选择目录", "恢复默认（系统 Download/ClipDitto）")
         else arrayOf("选择目录")
         // AlertDialog 的 setItems 会占掉 message 区域，说明文字放进标题
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("文件存储路径（默认存到系统 Download/ClipDitto）")
             .setItems(items) { _, which ->
                 when {
@@ -364,7 +367,7 @@ class LanSyncSettingsActivity : AppCompatActivity() {
     private fun showSyncMaxSizeDialog() {
         val presets = intArrayOf(5, 10, 20, 50, 100, 200)
         val labels = presets.map { "${it}M" }.toTypedArray() + "自定义…"
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("同步文件大小上限")
             .setItems(labels) { _, which ->
                 if (which < presets.size) {
@@ -388,7 +391,7 @@ class LanSyncSettingsActivity : AppCompatActivity() {
             setPadding(pad, pad / 2, pad, 0)
             addView(input)
         }
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("自定义大小上限")
             .setView(container)
             .setPositiveButton("确定") { _, _ ->
@@ -413,7 +416,7 @@ class LanSyncSettingsActivity : AppCompatActivity() {
         val labels = groups.map { LanSettings.GROUP_LABELS[it]!! }.toTypedArray()
         val s = LanSyncManager.settings()
         val checked = groups.map { it in s.syncTypeGroups }.toBooleanArray()
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle("同步类型")
             .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
                 checked[which] = isChecked
