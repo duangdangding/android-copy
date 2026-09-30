@@ -16,7 +16,8 @@ Companion PC project: [pc-lscopy (copy-pc)](https://github.com/duangdangding/pc-
 8. **LAN multi-device sync**: pair devices with a pairing code and sync clipboard history between them; manual sync with selectable range (latest N / a given day / all) or automatic incremental sync (every 30 s by default). Configurable content types (text/image/media/other), size cap (20 MB default), storage directory (`Download/ClipDitto` by default) and encrypted transfer (ECDH ephemeral keys + AES/GCM, off by default). Offline devices can be removed manually; synced entries from a specific device can be deleted separately.
 9. **Cloud relay sync**: a self-hosted relay server (WebSocket over TLS long connection) acts as a second sync channel alongside LAN — both channels run independently, so syncing with the PC keeps working off-LAN (e.g. on cellular). Challenge-response HMAC authentication (keys never transmitted), offline entries are queued server-side and pulled by cursor after reconnect; an optional group key enables end-to-end encryption (HKDF + AES-256-GCM, the server only sees ciphertext). Images stay LAN-only by default, with an opt-in toggle (≤4 MB). See `docs/android-relay-sync-design.md` (Chinese).
 10. **File sharing**: send any files to devices on the LAN without pairing — independent from clipboard sync. Online devices are discovered automatically (including the PC copy-pc client), or enter an IP manually; incoming files can be confirmed per-transfer or auto-accepted; transfer history supports search, opening files and batch deletion.
-11. **In-app updates**: the About page shows the current version and can check GitHub Releases for new versions. No confirmation dialog and no changelog — tap "立即更新" to download directly (with progress, cancellable); after the SHA-256 check passes, the system installer is launched. The main screen only shows a lightweight toast when a new version is found.
+11. **UI & theming**: Material 3 design — card-based history list, rounded dialogs, edge-to-edge immersive status bar; dark mode follows the system or can be set manually, and on Android 12+ an optional "follow system theme color" switch enables Material You dynamic color (the theme follows your wallpaper); the floating bubble has a press-and-bounce animation and long-press haptic feedback (can be disabled in settings).
+12. **In-app updates**: the About page shows the current version and can check GitHub Releases for new versions. No confirmation dialog and no changelog — tap "立即更新" to download directly (with progress, cancellable); after the SHA-256 check passes, the system installer is launched. The main screen only shows a lightweight toast when a new version is found.
 
 ## Build
 
@@ -74,5 +75,5 @@ app/src/main/java/com/clipditto/app/
 │   ├── FileShareActivity.kt      # File sharing send/receive
 │   ├── AboutActivity.kt          # About page and in-app update
 │   └── HistoryAdapter.kt         # Shared list adapter for main UI and floating panel
-└── util/                         # Fuzzy search / storage stats / token recognition / update checker
+└── util/                         # Fuzzy search / storage stats / token recognition / update checker / edge-to-edge
 ```
