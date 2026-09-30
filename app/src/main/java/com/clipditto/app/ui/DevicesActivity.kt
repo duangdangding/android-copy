@@ -353,18 +353,61 @@ class DevicesActivity : AppCompatActivity() {
             .show()
     }
 
-    /** 删除离线设备确认：解除本地配对并清理同步水位，列表不再残留 */
+    /**
+     * 删除离线设备确认：解除本地配对并清理同步水位，列表不再残留。
+     * 同步记录由用户选择：保留 或 连同媒体文件一起删除。
+     */
     private fun confirmRemoveDevice(d: LanDevice) {
         MaterialAlertDialogBuilder(this)
             .setTitle("移除设备")
-            .setMessage("把「${d.displayName}」从列表移除？\n将解除本地配对并清理同步进度，已同步到本机的记录保留。")
-            .setPositiveButton("移除") { _, _ ->
-                selected.remove(d.deviceId)
-                LanSyncManager.removeDevice(d)
-                Toast.makeText(this, "已移除「${d.displayName}」", Toast.LENGTH_SHORT).show()
+            .setMessage("把「${d.displayName}」从列表移除？\n将解除本地配对并清理同步进度。该设备同步到本机的记录（含媒体文件）如何处理？")
+            .setPositiveButton("保留记录并移除") { _, _ ->
+                performRemove(d, deleteRecords = false, fullRemove = true)
+            }
+            .setNeutralButton("删除记录并移除") { _, _ ->
+                performRemove(d, deleteRecords = true, fullRemove = true)
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    /** 取消配对确认：同样由用户选择是否连同该设备同步来的记录一起删除 */
+    private fun confirmUnpair(d: LanDevice) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("取消配对")
+            .setMessage("与「${d.displayName}」解除配对？\n该设备同步到本机的记录（含媒体文件）如何处理？")
+            .setPositiveButton("保留记录并解除") { _, _ ->
+                performRemove(d, deleteRecords = false, fullRemove = false)
+            }
+            .setNeutralButton("删除记录并解除") { _, _ ->
+                performRemove(d, deleteRecords = true, fullRemove = false)
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /**
+     * 执行移除/解除配对。
+     * @param fullRemove true = 从列表彻底移除（清同步水位，走 removeDevice）；
+     *   false = 仅取消配对（保留水位，重新配对后增量续传，走 unpair）
+     * @param deleteRecords true = 同时删除该设备同步到本机的全部记录（含媒体文件）
+     */
+    private fun performRemove(d: LanDevice, deleteRecords: Boolean, fullRemove: Boolean) {
+        selected.remove(d.deviceId)
+        if (fullRemove) LanSyncManager.removeDevice(d) else LanSyncManager.unpair(d.deviceId)
+        val action = if (fullRemove) "已移除" else "已解除配对"
+        if (!deleteRecords) {
+            Toast.makeText(this, "$action「${d.displayName}」，同步记录已保留", Toast.LENGTH_SHORT).show()
+            return
+        }
+        lifecycleScope.launch {
+            val (n, f) = repo.deleteRemoteDevice(d.deviceId)
+            val msg = if (f > 0)
+                "$action「${d.displayName}」并删除其同步记录 $n 条（$f 个文件未能删除，可能已被手动移走）"
+            else
+                "$action「${d.displayName}」并删除其同步记录 $n 条"
+            Toast.makeText(this@DevicesActivity, msg, Toast.LENGTH_LONG).show()
+        }
     }
 
     /** 未配对设备点击：配对 / 加入黑名单 */
@@ -475,7 +518,7 @@ class DevicesActivity : AppCompatActivity() {
                 when (which) {
                     0 -> syncDevices(listOf(d))
                     1 -> confirmDeleteRemote(listOf(d))
-                    2 -> LanSyncManager.unpair(d.deviceId)
+                    2 -> confirmUnpair(d)
                     3 -> confirmBlock(d)
                 }
             }

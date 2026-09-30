@@ -463,24 +463,24 @@ object LanSyncManager {
 
             val enabledGroups = settings.syncTypeGroups
             val maxBytes = settings.syncMaxSizeBytes
-            // 本批记录的原始最大时间戳：入库时把时间锚定到"到达时刻"，
-            // 保留批内相对间隔（最新一条 = 到达时刻，其余按原始间隔往前推），
-            // 这样同步来的内容排在列表最前，且批内顺序不打乱
-            val batchMaxTs = clips.maxOfOrNull { it.get("timestamp").asLong } ?: 0L
+            // 同步来的记录不保留原始时间，统一按当前时间入库：
+            // 以同步开始时刻为基准，按批内原始顺序逐条 +1ms，
+            // 保证整批排在列表最前且相互之间的先后顺序不乱
+            val baseTs = System.currentTimeMillis()
 
-            clips.forEach { obj ->
+            clips.forEachIndexed { index, obj ->
                 maxTs = maxOf(maxTs, obj.get("timestamp").asLong)
                 // 接收方过滤（在下载媒体之前生效，被跳过的媒体不会传输文件内容）
                 val type = obj.get("type").asInt
                 if (settings.syncGroupOf(type) !in enabledGroups) {
                     skippedType++
-                    return@forEach
+                    return@forEachIndexed
                 }
                 if (type != ClipType.TEXT) {
                     // 超过大小上限（元数据里的 fileSize；下载后还会再校验一次实际大小）
-                    if (obj.lng("fileSize") > maxBytes) { skippedTooBig++; return@forEach }
+                    if (obj.lng("fileSize") > maxBytes) { skippedTooBig++; return@forEachIndexed }
                 }
-                when (importClip(obj, d, batchMaxTs, includeMine)) {
+                when (importClip(obj, d, baseTs + index, includeMine)) {
                     ImportResult.Added -> added++
                     ImportResult.Duplicate -> skipped++
                     // 存储失败（目录权限失效/空间不足等）
@@ -515,15 +515,15 @@ object LanSyncManager {
 
     /**
      * 导入一条远端记录。
-     * @param batchMaxTs 本批记录的原始最大时间戳，用于把入库时间锚定到到达时刻：
-     *   displayTs = 现在 - (batchMaxTs - 原始时间)，批内相对顺序/间隔不变
+     * @param timestamp 入库时间：不使用记录原始时间，由调用方按到达时刻生成
+     *   （同步开始时刻 + 批内序号 ms，保证批内顺序不乱）
      * @param includeMine 手动圈范围同步时为 true：不拦截"本来来自本机"的记录，
      *   交给内容去重兜底（本机还有副本则去重，已删除则恢复回来）
      */
     private suspend fun importClip(
         obj: JsonObject,
         device: LanDevice,
-        batchMaxTs: Long,
+        timestamp: Long,
         includeMine: Boolean = false
     ): ImportResult {
         // 环回防护：内容本来就来自本机（自动增量同步时拦截，避免绕圈放大）
@@ -535,10 +535,6 @@ object LanSyncManager {
         val text = obj.str("text")
         val originDevice = obj.str("remoteDeviceId")
         val originId = obj.lng("remoteId")
-        val originalTs = obj.get("timestamp").asLong
-        // 锚定到到达时刻：列表按时间倒序，同步来的内容应出现在最前；
-        // 原始时间与批内最新时间的差值保留下来，整批相对顺序不乱
-        val timestamp = System.currentTimeMillis() - (batchMaxTs - originalTs).coerceAtLeast(0L)
 
         if (type == ClipType.TEXT) {
             val content = text ?: return ImportResult.Duplicate
