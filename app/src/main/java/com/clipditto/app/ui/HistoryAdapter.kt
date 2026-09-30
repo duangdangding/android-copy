@@ -21,7 +21,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.clipditto.app.R
 import com.clipditto.app.data.ClipItem
 import com.clipditto.app.data.ClipType
-import com.clipditto.app.util.AppSettings
+import com.clipditto.app.util.Haptics
 import com.clipditto.app.util.MediaFiles
 import com.google.android.material.card.MaterialCardView
 import java.text.SimpleDateFormat
@@ -108,9 +108,6 @@ class HistoryAdapter(
 
     override fun onBindViewHolder(holder: VH, position: Int) {
         val item = getItem(position)
-        // 长按震动的系统默认行为跟随设置开关（悬浮面板与主界面共用本适配器）
-        holder.itemView.isHapticFeedbackEnabled =
-            AppSettings.isHapticEnabled(holder.itemView.context)
         // 收藏的记录：类型徽章变琥珀色带 ★，整条卡片浅金底色；
         // 普通记录：徽章按类型着色（文字紫/图片绿/文件蓝/视频橙/音频青）
         holder.type.text =
@@ -180,6 +177,8 @@ class HistoryAdapter(
 
         holder.itemView.setOnClickListener { onClick(item) }
         holder.itemView.setOnLongClickListener {
+            // 长按触感反馈（设置里可关），主界面与悬浮面板共用
+            Haptics.longPress(holder.itemView.context, holder.itemView)
             onLongClick(item)
             true
         }

@@ -19,6 +19,7 @@ import androidx.appcompat.widget.SwitchCompat
 import androidx.lifecycle.lifecycleScope
 import com.clipditto.app.R
 import com.clipditto.app.util.EdgeToEdge
+import com.clipditto.app.util.Haptics
 import com.clipditto.app.backup.ConfigManager
 import com.clipditto.app.data.ClipRepository
 import com.clipditto.app.service.ClipboardService
@@ -110,6 +111,8 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<SwitchCompat>(R.id.swHaptic).setOnClickListener {
             val now = findViewById<SwitchCompat>(R.id.swHaptic).isChecked
             AppSettings.setHapticEnabled(this, now)
+            // 开启时立即震一下，便于确认设备触感是否正常
+            if (now) Haptics.longPress(this, it)
             Toast.makeText(
                 this,
                 if (now) "已开启长按触感反馈" else "已关闭长按触感反馈",

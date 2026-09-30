@@ -20,7 +20,6 @@ import android.provider.Settings
 import android.util.Log
 import android.view.ContextThemeWrapper
 import android.view.Gravity
-import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
@@ -51,6 +50,7 @@ import com.clipditto.app.ui.MainActivity
 import com.clipditto.app.ui.SwipeActions
 import com.clipditto.app.util.AppSettings
 import com.clipditto.app.util.FuzzySearch
+import com.clipditto.app.util.Haptics
 import com.clipditto.app.util.MediaFiles
 import com.clipditto.app.util.StorageStats
 import com.google.android.material.bottomsheet.BottomSheetDialog
@@ -543,9 +543,7 @@ class ClipboardService : Service() {
         val longPressHide = Runnable {
             if (!moved) {
                 // 长按触感反馈（设置里可关）
-                if (AppSettings.isHapticEnabled(this@ClipboardService)) {
-                    view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                }
+                Haptics.longPress(this@ClipboardService, view)
                 AppSettings.setBallEnabled(this@ClipboardService, false)
                 hidePanel()
                 hideBall()
@@ -737,7 +735,9 @@ class ClipboardService : Service() {
     @SuppressLint("InflateParams")
     private fun showPanel() {
         if (panelView != null || !Settings.canDrawOverlays(this)) return
-        val view = LayoutInflater.from(this).inflate(R.layout.view_floating_panel, null)
+        // Service 上下文不带应用主题（面板里有 MaterialCardView 等 Material 组件），需显式包裹主题再 inflate
+        val themedCtx = ContextThemeWrapper(this, R.style.Theme_ClipDitto)
+        val view = LayoutInflater.from(themedCtx).inflate(R.layout.view_floating_panel, null)
         // 弹窗列表整体透明度（设置页可调）
         view.alpha = AppSettings.getPanelAlpha(this) / 100f
         // 按圆角背景轮廓投射柔和阴影，浮起感更强
