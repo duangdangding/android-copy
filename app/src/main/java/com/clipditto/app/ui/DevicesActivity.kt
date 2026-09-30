@@ -494,6 +494,8 @@ class DevicesActivity : AppCompatActivity() {
                         "对方拒绝了本次配对"
                     is LanSyncManager.PairError.NeedConfirm ->
                         "对方未响应配对请求\n\n请让对方留意通知栏的「配对请求」通知，或让对方开启「自动同意配对请求」"
+                    is LanSyncManager.PairError.ForegroundOnly ->
+                        "对方仅在打开软件页面时接收配对请求\n\n请让对方打开软件后再发起配对"
                     is LanSyncManager.PairError.Blocked ->
                         "该设备在你的黑名单中\n\n请先在「黑名单」中将其移出"
                     is LanSyncManager.PairError.BlockedBy ->

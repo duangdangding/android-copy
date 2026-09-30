@@ -110,6 +110,9 @@ class LanSyncSettingsActivity : AppCompatActivity() {
         findViewById<SwitchCompat>(R.id.swAutoAccept).setOnCheckedChangeListener { _, on ->
             LanSyncManager.settings().autoAcceptPair = on
         }
+        findViewById<SwitchCompat>(R.id.swPairForegroundOnly).setOnCheckedChangeListener { _, on ->
+            LanSyncManager.settings().pairForegroundOnly = on
+        }
         findViewById<SwitchCompat>(R.id.swEncryption).setOnCheckedChangeListener { _, on ->
             LanSyncManager.settings().syncEncryption = on
         }
@@ -121,6 +124,7 @@ class LanSyncSettingsActivity : AppCompatActivity() {
         findViewById<SwitchCompat>(R.id.swSharing).isChecked = s.sharing
         findViewById<SwitchCompat>(R.id.swAutoSync).isChecked = s.autoSync
         findViewById<SwitchCompat>(R.id.swAutoAccept).isChecked = s.autoAcceptPair
+        findViewById<SwitchCompat>(R.id.swPairForegroundOnly).isChecked = s.pairForegroundOnly
         findViewById<SwitchCompat>(R.id.swEncryption).isChecked = s.syncEncryption
         refreshPairingCode()
     }

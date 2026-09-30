@@ -43,9 +43,6 @@ object LanSyncManager {
 
     private const val TAG = "LanSyncManager"
 
-    /** PC 端（copy-pc）/clips 的单次响应上限：返回条数达到它说明可能只拿到第一页 */
-    private const val PC_PAGE_SIZE = 500
-
     private lateinit var appContext: Context
     private lateinit var settings: LanSettings
     private lateinit var repo: ClipRepository
@@ -402,9 +399,9 @@ object LanSyncManager {
             // 包括"本来来自本机"的记录（本机可能已删除副本想恢复）；
             // 自动增量同步保持环回防护，防止内容在两台设备间绕圈放大
             val includeMine = scope != null
-            // 翻页兼容：PC 端（copy-pc）/clips 单次最多回 500 条且从"最旧"的开始给
-            // （不认 until/limit 参数）。若返回顶到页上限且服务端没按 limit 截断，
-            // 说明只拿到了第一页——用本页最大时间戳当新 since 继续向后翻，直到尾页
+            // 翻页兼容：旧版 PC 端（copy-pc ≤1.4.7）/clips 单次最多回 500 条且从"最旧"的开始给
+            // （不认 until/order 参数，limit 只是页大小）。用本页最大时间戳当新 since 继续向后翻，
+            // 翻到空页为止（旧 PC 在 LIMIT 后才过滤，页不满不代表到尾页）
             val raw = mutableListOf<JsonObject>()
             var cursor = since
             while (true) {
@@ -418,16 +415,18 @@ object LanSyncManager {
                 }
                 val batch = resp.items.map { it.asJsonObject }
                 raw.addAll(batch)
-                // 服务端认识 limit（安卓对安卓）时直接返回目标页，无需翻页；
-                // PC 端（copy-pc）不认 until/limit，只能靠翻页拿全后由下面的客户端兜底截取
+                // 服务端认识 limit（安卓对安卓、PC 带 order=desc）时直接返回目标页，无需翻页；
+                // 旧 PC 端（copy-pc ≤1.4.7）不认 until/order，只能靠翻页拿全后由下面的客户端兜底截取
                 val honoredLimit = limit > 0 && batch.size <= limit
                 val batchMax = batch.maxOfOrNull { it.get("timestamp").asLong } ?: cursor
                 // PC 的 created_at 是秒级精度：游标回退 1 秒再翻页，
                 // 防止页截断点落在同一秒中间时，该秒剩余记录被严格大于（>）的水位永久跳过；
                 // 重叠拉回的重复记录由下面的 distinctBy(id) + 入库内容去重兜住
                 val newCursor = batchMax - 999
-                // newCursor <= cursor：游标没有推进（整页同时间戳/已到边界），防死循环
-                if (honoredLimit || batch.size < PC_PAGE_SIZE || newCursor <= cursor) break
+                // 翻页结束条件：空页 或 游标没有推进（整页同时间戳/已到边界）。
+                // 不能用"不足一页（<500）"判断：旧 PC 端在 SQL LIMIT 之后才过滤文件/环回记录，
+                // 每一页实际返回都可能少于 500，按页不满就停会漏掉后面所有记录
+                if (honoredLimit || batch.isEmpty() || newCursor <= cursor) break
                 cursor = newCursor
                 Log.d(TAG, "对方分页返回（旧 PC 端？），向后翻页：已累积 ${raw.size} 条")
             }
@@ -445,6 +444,11 @@ object LanSyncManager {
                             .take(limit)
                             .sortedBy { it.get("timestamp").asLong }
                     } else list
+                }
+                // "最近 N 条"对 PC 端会带 order=desc 请求，返回是倒序的；
+                // 统一转回升序，保证下面按批内顺序分配入库时间后列表顺序正确
+                .let { list ->
+                    if (limit > 0) list.sortedBy { it.get("timestamp").asLong } else list
                 }
             if (clips.size != distinct.size) {
                 Log.d(TAG, "对方未按范围返回（旧版本？），客户端兜底过滤：${distinct.size} → ${clips.size} 条")
@@ -809,6 +813,7 @@ object LanSyncManager {
         object SharingOff : PairError()
         object Rejected : PairError()
         object NeedConfirm : PairError()
+        object ForegroundOnly : PairError()
         object Blocked : PairError()
         object BlockedBy : PairError()
         data class ConnectFail(val detail: String) : PairError()
@@ -841,6 +846,8 @@ object LanSyncManager {
                 PairError.Rejected
             } catch (e: PairNeedConfirmException) {
                 PairError.NeedConfirm
+            } catch (e: PairForegroundOnlyException) {
+                PairError.ForegroundOnly
             } catch (e: Exception) {
                 Log.w(TAG, "配对连接失败: ${e.message}")
                 PairError.ConnectFail("${fresh.host}:${fresh.port} ${e.javaClass.simpleName}: ${e.message}")

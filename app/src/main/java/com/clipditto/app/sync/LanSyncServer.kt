@@ -46,8 +46,10 @@ interface FsReceiveHandler {
  *
  * 接口：
  * - GET /info           设备信息（无需配对码）
- * - GET /clips?since=[&until=][&limit=]  拉取记录（需配对码 + 共享开关开启）；
- *   until=时间上限（含），limit=只取最新 N 条（纯按时间倒序取，不走 since 水位），均为可选参数
+ * - GET /clips?since=[&until=][&limit=][&order=]  拉取记录（需配对码 + 共享开关开启）；
+ *   带 order 参数（asc/desc）时是分页语义：since/until/limit/排序全部生效；
+ *   不带 order 而带 limit 时是旧版"最近 N 条"语义：纯按时间倒序取最新 N 条，不走水位
+ *   （保留该旧语义仅为兼容 4.15 及更早的安卓客户端）
  * - GET /file?id=       拉取媒体文件（需配对码 + 共享开关开启）
  * - POST /fs/send       文件共享接收（免配对免 token，由 [FsReceiveHandler] 处理）
  * - POST /recv          PC 端（copy-pc）文件发送接口（同样走文件共享流程）
@@ -354,21 +356,31 @@ class LanSyncServer(
         // includeMine=1：请求方手动圈范围同步时，明确允许回传"本来来自它"的记录
         // （它可能已删除本机副本想恢复；去重由请求方按内容兜底，不会重复入库）
         val includeMine = query["includeMine"] == "1"
+        // order 参数是"分页语义"的开关：带 order（PC 客户端、新版安卓客户端）时
+        // since/until/order/limit 全部生效；不带 order 而带 limit 的是旧版安卓客户端的
+        // "最近 N 条"，保持旧语义（忽略水位，纯时间倒序取最新 N 条）兼容。
+        // 若不分这一层，PC 客户端翻页拉取（每页都带 limit=500）会被当成"最近 N 条"，
+        // since 被忽略导致每页都返回相同的最新 500 条，PC 端翻页死循环
+        val hasOrder = query.containsKey("order")
+        val orderDesc = query["order"] == "desc"
         val requesterId = headers["x-device-id"] ?: ""
-        val items = if (limit > 0) {
-            // "最近 N 条"：不走水位（since/until 全部忽略），SQL 纯按时间倒序 LIMIT 取最新 N 条，
-            // 环回防护在 SQL 里完成；线上输出统一转回升序
+        val items = if (limit > 0 && !hasOrder) {
+            // 旧版安卓客户端"最近 N 条"：不走水位（since/until 全部忽略），SQL 纯按时间倒序
+            // LIMIT 取最新 N 条，环回防护在 SQL 里完成；线上输出统一转回升序
             val sql = if (includeMine)
                 "SELECT * FROM clips ORDER BY timestamp DESC LIMIT $limit"
             else
                 "SELECT * FROM clips WHERE remoteDeviceId IS NULL OR remoteDeviceId != '$requesterId' ORDER BY timestamp DESC LIMIT $limit"
-            Log.d(TAG, "/clips 执行 SQL（最近N条，无水位）: $sql")
+            Log.d(TAG, "/clips 执行 SQL（最近N条旧语义，无水位）: $sql")
             runBlocking { repo.getRecent(limit, if (includeMine) null else requesterId) }
                 .sortedBy { it.timestamp }
         } else {
+            // 分页语义：水位 + 方向 + 页大小全部生效（环回防护在代码里过滤后再分页截取）
             Log.d(
-                TAG, "/clips 执行 SQL（水位增量）: " +
-                    "SELECT * FROM clips WHERE timestamp > $since ORDER BY timestamp ASC" +
+                TAG, "/clips 执行 SQL（分页语义）: " +
+                    "SELECT * FROM clips WHERE timestamp > $since " +
+                    "ORDER BY timestamp ${if (orderDesc) "DESC" else "ASC"}" +
+                    (if (limit > 0) " LIMIT $limit" else "") +
                     "（代码过滤: timestamp <= $until" +
                     (if (includeMine) "" else " 且排除来自 $requesterId 的记录") + "）"
             )
@@ -376,9 +388,11 @@ class LanSyncServer(
                 // 环回防护：默认不回传"本来就来自请求方"的记录（防止内容绕圈放大）
                 .filter { includeMine || it.remoteDeviceId == null || it.remoteDeviceId != requesterId }
                 .filter { it.timestamp <= until }
+                .let { l -> if (orderDesc) l.sortedByDescending { it.timestamp } else l }
+                .let { l -> if (limit > 0) l.take(limit) else l }
         }
         Log.d(
-            TAG, "/clips since=$since until=$until limit=$limit → " +
+            TAG, "/clips since=$since until=$until limit=$limit order=${query["order"]} → " +
                 "返回 ${items.size} 条，时间范围 ${items.firstOrNull()?.timestamp}~${items.lastOrNull()?.timestamp}"
         )
         val list = items.map { it.toWire() }
@@ -457,6 +471,16 @@ class LanSyncServer(
             return
         }
         val blocked = requester.deviceId in settings.getBlockedDevices()
+        // 「仅在打开软件时接收配对请求」开启且 App 在后台：直接拒收并明确告知请求方
+        // （开了「自动同意配对」时无需人工确认，不受本设置影响）
+        val needConfirm = blocked || !settings.autoAcceptPair
+        if (needConfirm && settings.pairForegroundOnly &&
+            com.clipditto.app.App.topActivity == null
+        ) {
+            Log.d(TAG, "配对请求被拒（仅前台接收，App 在后台）: ${requester.deviceId}")
+            respond(output, 409, "application/json", """{"error":"foreground_only"}""")
+            return
+        }
         when {
             // 被显式拉黑的设备必须手动同意（即使开了自动同意），防止绕过确认悄悄重连
             blocked -> when (pairApproval(requester)) {

@@ -36,6 +36,15 @@ class LanSettings(context: Context) {
         get() = prefs.getBoolean(KEY_AUTO_ACCEPT_PAIR, false)
         set(v) = prefs.edit().putBoolean(KEY_AUTO_ACCEPT_PAIR, v).apply()
 
+    /**
+     * 仅在打开软件页面时接收配对请求（默认关闭 = 后台也接收，请求来了发通知弹窗）。
+     * 开启后：App 在后台（最小化）时配对请求直接拒收，请求方会收到明确提示；
+     * 开了「自动同意配对」时无需确认，本设置不生效。
+     */
+    var pairForegroundOnly: Boolean
+        get() = prefs.getBoolean(KEY_PAIR_FOREGROUND_ONLY, false)
+        set(v) = prefs.edit().putBoolean(KEY_PAIR_FOREGROUND_ONLY, v).apply()
+
     // ---------------- 同步接收设置（本机作为接收方时生效） ----------------
 
     /**
@@ -259,6 +268,7 @@ class LanSettings(context: Context) {
         private const val KEY_SHARING = "sharing"
         private const val KEY_AUTO_SYNC = "auto_sync"
         private const val KEY_AUTO_ACCEPT_PAIR = "auto_accept_pair"
+        private const val KEY_PAIR_FOREGROUND_ONLY = "pair_foreground_only"
         private const val KEY_DEVICE_ID = "device_id"
         private const val KEY_DEVICE_NAME = "device_name"
         private const val KEY_TOKEN = "pairing_token"

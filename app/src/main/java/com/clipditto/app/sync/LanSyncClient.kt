@@ -19,6 +19,9 @@ class PairRejectedException : Exception("rejected")
 /** 对方需要手动确认，但对方设备页不在前台 */
 class PairNeedConfirmException : Exception("need_confirm")
 
+/** 对方设置了仅在打开软件页面时接收配对请求，且对方当前在后台 */
+class PairForegroundOnlyException : Exception("foreground_only")
+
 /** 对方已取消与本机的配对（本机被拉黑） */
 class UnpairedException : Exception("unpaired")
 
@@ -70,7 +73,10 @@ class LanSyncClient(
      * 拉取记录。
      * @param since 只取 timestamp 大于该值的记录（增量水位）
      * @param until 可选，只取 timestamp 不超过该值的记录（"同步某一天"用）
-     * @param limit 可选，>0 时只取最新 N 条（"同步最近 N 条"用）
+     * @param limit 可选，>0 时只取最新 N 条（"同步最近 N 条"用）。
+     *   带 limit 时会同时附 order=desc：PC 服务端（v1.1.7+）认识该参数，
+     *   按时间倒序取最新 N 条；安卓服务端忽略未知参数，行为不变；
+     *   都不认识的远古服务端全量返回，由调用方翻页 + 兜底截取。
      * 本机开启加密传输时带临时公钥请求加密；对方不支持（旧版本）直接失败，不回退明文。
      */
     fun fetchClips(
@@ -83,7 +89,11 @@ class LanSyncClient(
         val qs = buildString {
             append("since=").append(since)
             if (until != null) append("&until=").append(until)
-            if (limit > 0) append("&limit=").append(limit)
+            if (limit > 0) {
+                append("&limit=").append(limit)
+                // PC 端 limit 默认按时间升序取"最旧 N 条"，必须显式要求倒序
+                append("&order=desc")
+            }
             if (includeMine) append("&includeMine=1")
         }
         val eph = if (settings.syncEncryption) SyncCrypto.generate() else null
@@ -135,6 +145,7 @@ class LanSyncClient(
                     }.getOrNull()
                     when (body?.get("error")?.asString) {
                         "rejected" -> throw PairRejectedException()
+                        "foreground_only" -> throw PairForegroundOnlyException()
                         else -> throw PairNeedConfirmException()
                     }
                 }
