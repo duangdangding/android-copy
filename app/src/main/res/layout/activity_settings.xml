@@ -128,7 +128,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:text="闲置几秒后悬浮球还会自动贴边并再变淡，触摸即恢复"
+                        android:text="调低透明度可减少悬浮球对下层界面的遮挡"
                         android:textColor="@color/text_hint"
                         android:textSize="12sp" />
                 </LinearLayout>

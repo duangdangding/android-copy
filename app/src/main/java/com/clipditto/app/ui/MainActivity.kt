@@ -282,8 +282,16 @@ class MainActivity : AppCompatActivity() {
 
     /** 显示监听服务 / 无障碍两项状态，无障碍未开启时点击跳转设置页 */
     private fun refreshStatus() {
+        // 服务运行中但面板里暂停了监听：状态要显示"已暂停"，否则和实际行为不符
+        val monitorOn = getSharedPreferences(BootReceiver.PREFS, Context.MODE_PRIVATE)
+            .getBoolean(BootReceiver.KEY_MONITOR_ENABLED, true)
+        val listenStatus = when {
+            !ClipboardService.isRunning -> "⛔ 监听服务未开启"
+            !monitorOn -> "⏸ 监听已暂停（悬浮面板里可恢复）"
+            else -> "✅ 监听服务运行中"
+        }
         val status = buildString {
-            append(if (ClipboardService.isRunning) "✅ 监听服务运行中" else "⛔ 监听服务未开启")
+            append(listenStatus)
             append("　")
             append(if (PasteAccessibilityService.isEnabled) "✅ 无障碍已开启" else "⚠️ 无障碍未开启（点我开启）")
         }
@@ -330,13 +338,13 @@ class MainActivity : AppCompatActivity() {
         if (ClipboardService.isRunning) {
             ClipboardService.stop(this)
             saveServiceEnabled(false)
-            refreshListenButton()
+            showListenTargetState(false)
             return
         }
         if (!ensureOverlayPermission()) return
         ClipboardService.start(this)
         saveServiceEnabled(true)
-        refreshListenButton()
+        showListenTargetState(true)
         if (!PasteAccessibilityService.isEnabled) {
             Toast.makeText(
                 this,
@@ -344,6 +352,21 @@ class MainActivity : AppCompatActivity() {
                 Toast.LENGTH_LONG
             ).show()
         }
+    }
+
+    /**
+     * 服务启停是异步的（intent 送达、服务创建/销毁后才改变 isRunning），
+     * 立即刷新按钮会读到旧状态、看起来"点了没变"——先按目标状态显示，
+     * 500ms 后按真实运行状态校准一次
+     */
+    private fun showListenTargetState(running: Boolean) {
+        btnListen.text = if (running) "关闭监听" else "开启监听"
+        btnListen.setIconResource(if (running) R.drawable.ic_pause else R.drawable.ic_play)
+        styleStateButton(btnListen, running)
+        btnListen.postDelayed({
+            refreshListenButton()
+            refreshStatus()
+        }, 500)
     }
 
     /** 悬浮球开关：只控制悬浮球显示/隐藏，后台监听不受影响 */

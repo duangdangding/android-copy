@@ -113,6 +113,15 @@ class ClipboardService : Service() {
     @Volatile
     private var lastPollAt = 0L
 
+    /**
+     * 系统剪贴板变化回调是否送达过。部分 ROM（如 HyperOS）不下发回调，
+     * 才需要无障碍事件驱动的轮询兜底；回调可用的 ROM 上弱信号轮询纯属多余——
+     * 每次窗口切换（返回手势、切 App）都排一次抢焦点读取，焦点悬浮窗的
+     * 添加/移除会打断进行中的手势，表现为边缘滑动卡顿
+     */
+    @Volatile
+    private var systemCallbackSeen = false
+
     /** 上一次轮询是否读到了新内容：命中则跳过一次补读，减少焦点悬浮窗的添加/移除次数 */
     @Volatile
     private var lastPollFoundNew = false
@@ -121,19 +130,24 @@ class ClipboardService : Service() {
      * 无障碍服务检测到可能的复制行为时回调。
      * 部分 ROM（如 HyperOS）不下发系统剪贴板变化回调，只能靠事件驱动轮询兜底。
      *
-     * 按信号强度处理：
-     * - [CopySignal.ACTION]（点复制项/复制 Toast）：复制已发生，立即读取。
-     *   连续复制时每条都能被捕获；仅键盘正在弹出动画时推迟，避免打断动画
+     * 注意：事件驱动的每次读取都要添加/移除一次抢焦点的 1px 悬浮窗，
+     * 在点击/滑动/窗口切换途中触发会打断手势、造成卡顿，所以触发条件刻意收紧：
+     * - 系统回调可用的 ROM（[systemCallbackSeen]）：复制由 clipListener 权威捕获，
+     *   本函数全部跳过，不做任何事件驱动轮询
+     * - [CopySignal.ACTION]（点复制项/复制 Toast）：要求刚出现过文字选区才读取——
+     *   "非可编辑点击"绝大多数是普通按钮、Toast 也大多与复制无关，不能见点就抢焦点
      * - [CopySignal.SELECTION]（选中文字）：剪贴板尚未写入，且操作菜单正在显示，
      *   立即抢焦点会闪屏——推迟到选区稳定后合并读取
-     * - [CopySignal.WEAK_WINDOW]（窗口切换/弹窗）：可能只是弹了个输入框，
-     *   键盘弹出或可见时放弃；选区活跃时推迟
+     * - [CopySignal.WEAK_WINDOW]（窗口切换/弹窗）：返回手势/切 App 也是窗口切换，
+     *   高频且几乎与复制无关——做 1.2s 防抖，界面稳定后才读一次
      */
     private fun onPossibleClipboardCopy(signal: CopySignal) {
         if (!isMonitorEnabled()) {
             dirtyWhilePaused = true
             return
         }
+        // 系统回调可用：复制事件由 clipListener 捕获，事件驱动轮询纯属多余且伤手势
+        if (systemCallbackSeen) return
         // Shizuku 通道：读剪贴板不抢窗口焦点，输入法/选区/系统弹窗全部无需避让，
         // 直接延迟读取兜底（复制事件先于剪贴板写入）
         if (ShizukuClipboard.isChannelActive()) {
@@ -152,19 +166,15 @@ class ClipboardService : Service() {
                 return
             }
             CopySignal.WEAK_WINDOW -> {
-                if (PasteAccessibilityService.imeAnimatingIn() ||
-                    PasteAccessibilityService.imeVisible() ||
-                    PasteAccessibilityService.systemDialogRecently()
-                ) {
-                    Log.d(TAG, "输入法/系统弹窗激活中，跳过弱信号轮询")
-                    return
-                }
-                if (PasteAccessibilityService.selectionRecently()) {
-                    scheduleSettledPoll()
-                    return
-                }
+                // 防抖：连续窗口切换（导航手势进行中）不断重置计时，
+                // 只有界面稳定 1.2s 后才读一次；复制菜单弹出/关闭引起的变化照样能捕获
+                scheduleWeakWindowPoll()
+                return
             }
             CopySignal.ACTION -> {
+                // 刚出现过文字选区（选中→点"复制"菜单）才像真正的复制；
+                // 无选区上下文的点击/Toast 直接忽略，交给弱信号防抖兜底
+                if (!PasteAccessibilityService.selectionRecently()) return
                 // 键盘正在弹出动画 / 系统弹窗（生物识别、应用锁）显示中：
                 // 推迟读取，避免打断（内容不会丢，稍后补读）
                 if (PasteAccessibilityService.imeAnimatingIn() ||
@@ -173,8 +183,6 @@ class ClipboardService : Service() {
                     scheduleSettledPoll()
                     return
                 }
-                // 注意：ACTION 不因"选区活跃"推迟——点复制的瞬间菜单已关闭，
-                // 连续复制时每条都要立即读取，否则中间内容会被覆盖丢失
             }
         }
         val now = SystemClock.uptimeMillis()
@@ -193,6 +201,35 @@ class ClipboardService : Service() {
             }
             pollClipboard()
         }, 400)
+    }
+
+    /** 窗口切换弱信号的防抖任务 */
+    private var weakWindowPollRunnable: Runnable? = null
+
+    /**
+     * 窗口切换防抖读取：每次窗口变化重置计时，1.2s 无新变化（界面稳定）才读一次。
+     * 导航手势/连续切 App 期间永不触发读取；复制菜单弹出又关闭引起的
+     * 窗口变化，在稳定后这一轮读取里照样能捕获内容。
+     */
+    private fun scheduleWeakWindowPoll() {
+        weakWindowPollRunnable?.let { handler.removeCallbacks(it) }
+        val r = Runnable {
+            weakWindowPollRunnable = null
+            if (PasteAccessibilityService.imeAnimatingIn() ||
+                PasteAccessibilityService.imeVisible() ||
+                PasteAccessibilityService.systemDialogRecently()
+            ) {
+                Log.d(TAG, "输入法/系统弹窗激活中，跳过弱信号防抖读取")
+                return@Runnable
+            }
+            if (PasteAccessibilityService.selectionRecently()) {
+                scheduleSettledPoll()
+                return@Runnable
+            }
+            pollClipboard()
+        }
+        weakWindowPollRunnable = r
+        handler.postDelayed(r, 1_200)
     }
 
     /** 选区稳定后的合并读取：是否已排队 */
@@ -258,6 +295,9 @@ class ClipboardService : Service() {
             Log.d(TAG, "本次变化来自自身写入，跳过")
             return@OnPrimaryClipChangedListener
         }
+        // 其他 App 的写入能触发回调，才证明本 ROM 的系统级通知可用
+        // （部分 ROM 对自身写入有回调、对后台监听其他 App 没有）
+        systemCallbackSeen = true
         if (!isMonitorEnabled()) {
             dirtyWhilePaused = true
             Log.d(TAG, "监听已暂停，标记脏数据")
@@ -558,8 +598,6 @@ class ClipboardService : Service() {
         view.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    // 触摸即唤醒：取消闲置计时，若已贴边收缩则恢复原状
-                    undockBall()
                     // 按压反馈：球体轻微缩小
                     view.animate().scaleX(0.85f).scaleY(0.85f).setDuration(120).start()
                     downX = event.rawX; downY = event.rawY
@@ -590,14 +628,11 @@ class ClipboardService : Service() {
                     view.animate().scaleX(1f).scaleY(1f).setDuration(200)
                         .setInterpolator(OvershootInterpolator()).start()
                     if (!moved && ballView != null) togglePanel()
-                    // 松手后重新计时，闲置一段时间自动贴边收缩
-                    scheduleBallIdle()
                     true
                 }
                 MotionEvent.ACTION_CANCEL -> {
                     handler.removeCallbacks(longPressHide)
                     view.animate().scaleX(1f).scaleY(1f).setDuration(150).start()
-                    scheduleBallIdle()
                     true
                 }
                 else -> false
@@ -607,9 +642,8 @@ class ClipboardService : Service() {
         ballView = view
         ballParams = params
         runCatching { wm.addView(view, params) }
-        // 应用外观设置（大小/透明度）并开启闲置收缩计时
+        // 应用外观设置（大小/透明度）
         applyBallAppearance()
-        scheduleBallIdle()
     }
 
     private var ballParams: WindowManager.LayoutParams? = null
@@ -625,7 +659,6 @@ class ClipboardService : Service() {
     }
 
     private fun hideBall() {
-        cancelBallIdle()
         val view = ballView
         ballView = null
         ballParams = null
@@ -640,13 +673,7 @@ class ClipboardService : Service() {
         }
     }
 
-    // ---------------- 悬浮球外观与闲置收缩 ----------------
-
-    /** 闲置收缩计时任务 */
-    private var ballIdleRunnable: Runnable? = null
-
-    /** 当前是否处于贴边收缩状态 */
-    private var ballDocked = false
+    // ---------------- 悬浮球外观 ----------------
 
     /** 应用外观设置：悬浮球大小 + 透明度（设置页调整后经 refreshAppearance 触发） */
     private fun applyBallAppearance() {
@@ -659,71 +686,14 @@ class ClipboardService : Service() {
         // 内边距随大小等比缩放（布局里 40dp 球配 9dp 内边距）
         val pad = sizePx * 9 / 40
         view.setPadding(pad, pad, pad, pad)
-        ballDocked = false
         view.animate().cancel()
         view.alpha = AppSettings.getBallAlpha(this) / 100f
-        // 收缩动画改过的缩放/轴心一并复位
+        // 按压/拖动反馈动画改过的缩放/轴心一并复位
         view.scaleX = 1f
         view.scaleY = 1f
         view.pivotX = sizePx / 2f
         view.pivotY = sizePx / 2f
         runCatching { wm.updateViewLayout(view, params) }
-    }
-
-    /** 启动/重置闲置计时：3 秒无操作且面板未打开时，悬浮球自动贴边收缩 */
-    private fun scheduleBallIdle() {
-        cancelBallIdle()
-        if (ballView == null) return
-        val r = Runnable { dockBallToEdge() }
-        ballIdleRunnable = r
-        handler.postDelayed(r, 3000)
-    }
-
-    private fun cancelBallIdle() {
-        ballIdleRunnable?.let { handler.removeCallbacks(it) }
-        ballIdleRunnable = null
-    }
-
-    /** 触摸唤醒：取消闲置计时，若已收缩则恢复完整显示 */
-    private fun undockBall() {
-        cancelBallIdle()
-        val view = ballView ?: return
-        if (!ballDocked) return
-        ballDocked = false
-        view.animate().cancel()
-        view.animate()
-            .alpha(AppSettings.getBallAlpha(this) / 100f)
-            .scaleX(1f)
-            .scaleY(1f)
-            .setDuration(150)
-            .start()
-    }
-
-    /**
-     * 闲置后收缩：朝最近的屏幕边缘方向缩小变淡，减少遮挡。
-     * 只动视图动画、不移动悬浮窗窗口——逐帧 updateViewLayout 重排悬浮窗
-     * 在部分 ROM 上会闪一帧。
-     */
-    private fun dockBallToEdge() {
-        val view = ballView ?: return
-        val params = ballParams ?: return
-        // 面板打开时用户正在操作，不收缩
-        if (panelView != null) return
-        ballDocked = true
-        val dm = resources.displayMetrics
-        val w = view.width.takeIf { it > 0 }
-            ?: (AppSettings.getBallSizeDp(this) * dm.density).toInt()
-        // 轴心放在靠近屏幕边缘的一侧：球朝那个方向缩，视觉上像"贴边收起来"
-        val nearLeft = params.x + w / 2 < dm.widthPixels / 2
-        view.animate().cancel()
-        view.pivotX = if (nearLeft) 0f else w.toFloat()
-        view.pivotY = w / 2f
-        view.animate()
-            .alpha(AppSettings.getBallAlpha(this) / 100f * 0.35f)
-            .scaleX(0.6f)
-            .scaleY(0.6f)
-            .setDuration(250)
-            .start()
     }
 
     // ---------------- 悬浮面板 ----------------
@@ -742,8 +712,6 @@ class ClipboardService : Service() {
         view.alpha = AppSettings.getPanelAlpha(this) / 100f
         // 按圆角背景轮廓投射柔和阴影，浮起感更强
         view.elevation = 12 * resources.displayMetrics.density
-        // 面板打开期间悬浮球保持完整显示，不做闲置收缩
-        cancelBallIdle()
 
         val dm = resources.displayMetrics
         val prefs = getSharedPreferences(BootReceiver.PREFS, Context.MODE_PRIVATE)
@@ -1055,8 +1023,6 @@ class ClipboardService : Service() {
                 runCatching { wm.removeView(view) }
             }
         }
-        // 面板收起后恢复悬浮球闲置收缩计时
-        scheduleBallIdle()
     }
 
     /** 外部请求收起面板（如主界面打开时）；服务与界面同进程且都在主线程，直接移除悬浮窗 */

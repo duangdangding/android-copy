@@ -60,6 +60,13 @@ class PasteAccessibilityService : AccessibilityService() {
             AccessibilityEvent.TYPE_VIEW_CLICKED,
             AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED -> {
                 if (event.packageName == packageName) return
+                // 打字时的光标移动（选区折叠）也会持续发这个事件：与复制无关，
+                // 输入框节点也早已由聚焦/点击事件记住，无需刷新——直接跳过。
+                // 每按一个键都 obtain 一次节点是一整趟跨进程 IPC，高频打字时
+                // 会持续占用主线程，是打字卡顿的主要来源
+                if (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED &&
+                    event.fromIndex == event.toIndex
+                ) return
                 val source = event.source ?: return
                 val editable = source.isEditable
                 if (editable) {
