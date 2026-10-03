@@ -46,11 +46,15 @@
 ## 关键机制与坑（改动前必读）
 
 - **Android 10+ 后台剪贴板限制**：系统禁止后台 App 读剪贴板。现行方案：检测到变化时临时加 1px 透明悬浮窗抢焦点读取，读完立即移除；另有 Shizuku 通道（`ShizukuClipboard` / `ClipboardShellService`）。不要"简化"掉这段逻辑。
+- **事件驱动轮询的触发条件刻意收紧（2026-10 卡顿排查结论，勿放宽）**：每次事件驱动读取都要添加/移除一次抢焦点的 1px 悬浮窗，在点击/滑动/窗口切换途中触发会打断手势导航、造成系统卡顿。现行约束（`ClipboardService.onPossibleClipboardCopy`）：① 系统剪贴板回调可用的 ROM（`systemCallbackSeen`，需**其他 App 写入**触发过一次回调才算，自身写入不算）事件轮询全关；② `ACTION` 信号（点击/Toast）必须有近期文字选区才响应——"非可编辑点击"绝大多数是普通按钮；③ `WEAK_WINDOW`（窗口切换）做 1.2s 防抖，连续导航期间不读取。这些信号只是无回调 ROM（HyperOS 等）的兜底。
+- **无障碍服务的 IPC 开销**：`TYPE_VIEW_TEXT_SELECTION_CHANGED` 在打字时每个按键都触发（光标移动、选区折叠），此时**不得** `obtain` 事件节点（一趟跨进程 IPC），直接按 `fromIndex == toIndex` 跳过；输入框追踪由聚焦/点击事件负责。
+- **悬浮球没有闲置收缩功能**（已移除）：贴边收缩会压住手势导航的边缘返回触发区（视图 scale 只改视觉不改触摸热区）。减少遮挡请引导用户调设置里的小/透明度，不要加回自动贴边/缩窄类逻辑。
 - **文字粘贴链路**：先写系统剪贴板 → 无障碍服务对聚焦的可编辑节点 `ACTION_PASTE`；无障碍未开启时降级为"复制到剪贴板手动粘贴"。
 - **媒体粘贴**：经 `FileProvider` 暴露私有目录文件（配置在 `res/xml/file_paths.xml`），以 Uri 放回系统剪贴板。
 - **媒体文件持久化**：复制入库时媒体拷贝到应用私有目录，删除记录（含按时间段批量删）必须同步删文件，见 `ClipRepository`。
 - **BuildConfig 依赖**：Shizuku 用户服务用到 `BuildConfig.APPLICATION_ID` / `DEBUG`，已开 `buildConfig true`，不要关。
 - `settings.gradle` 使用 `RepositoriesMode.FAIL_ON_PROJECT_REPOS`——仓库只能在 `settings.gradle` 声明，不要往模块级 build.gradle 加 `repositories`。
+- **服务启停是异步的**：`start`/`stop` 都是发 intent，`isRunning` 要等服务创建/销毁后才变化。UI 按钮点按后立即刷新会读到旧状态，要先按目标状态显示、延迟 ~500ms 再校准（参考 `MainActivity.showListenTargetState`）。
 
 ## 代码约定
 
