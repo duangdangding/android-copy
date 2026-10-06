@@ -19,9 +19,6 @@ class PairRejectedException : Exception("rejected")
 /** 对方需要手动确认，但对方设备页不在前台 */
 class PairNeedConfirmException : Exception("need_confirm")
 
-/** 对方设置了仅在打开软件页面时接收配对请求，且对方当前在后台 */
-class PairForegroundOnlyException : Exception("foreground_only")
-
 /** 对方已取消与本机的配对（本机被拉黑） */
 class UnpairedException : Exception("unpaired")
 
@@ -145,7 +142,6 @@ class LanSyncClient(
                     }.getOrNull()
                     when (body?.get("error")?.asString) {
                         "rejected" -> throw PairRejectedException()
-                        "foreground_only" -> throw PairForegroundOnlyException()
                         else -> throw PairNeedConfirmException()
                     }
                 }

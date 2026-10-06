@@ -471,16 +471,6 @@ class LanSyncServer(
             return
         }
         val blocked = requester.deviceId in settings.getBlockedDevices()
-        // 「仅在打开软件时接收配对请求」开启且 App 在后台：直接拒收并明确告知请求方
-        // （开了「自动同意配对」时无需人工确认，不受本设置影响）
-        val needConfirm = blocked || !settings.autoAcceptPair
-        if (needConfirm && settings.pairForegroundOnly &&
-            com.clipditto.app.App.topActivity == null
-        ) {
-            Log.d(TAG, "配对请求被拒（仅前台接收，App 在后台）: ${requester.deviceId}")
-            respond(output, 409, "application/json", """{"error":"foreground_only"}""")
-            return
-        }
         when {
             // 被显式拉黑的设备必须手动同意（即使开了自动同意），防止绕过确认悄悄重连
             blocked -> when (pairApproval(requester)) {

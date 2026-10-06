@@ -26,6 +26,29 @@ class FileShareClient(private val lanSettings: LanSettings) {
     /** 发送失败原因，message 为可直接展示的中文 */
     class FsSendException(message: String) : Exception(message)
 
+    /** 用户主动取消：置位后当前连接断开、后续文件不再发送 */
+    @Volatile
+    private var cancelled = false
+
+    /** 正在传输的连接（取消时从 UI 线程断开它，中断阻塞中的读写） */
+    @Volatile
+    private var activeConn: HttpURLConnection? = null
+
+    /** 取消当前批次发送：阻塞中的连接会立即失败，已传完的文件不受影响 */
+    fun cancel() {
+        cancelled = true
+        runCatching { activeConn?.disconnect() }
+    }
+
+    /** 新一批发送前重置取消标记 */
+    fun resetCancel() {
+        cancelled = false
+    }
+
+    private fun throwIfCancelled() {
+        if (cancelled) throw FsSendException("已取消发送")
+    }
+
     /** /fs/send 路由不存在：对方是 PC/旧协议，降级 /recv 重试 */
     private class RouteNotFoundException : Exception()
 
@@ -148,6 +171,7 @@ class FileShareClient(private val lanSettings: LanSettings) {
         size: Long,
         openStream: () -> InputStream?
     ): Int {
+        throwIfCancelled()
         conn.connectTimeout = 5_000
         conn.requestMethod = "POST"
         conn.doOutput = true
@@ -162,12 +186,28 @@ class FileShareClient(private val lanSettings: LanSettings) {
         conn.setRequestProperty("X-File-Size", size.toString())
 
         val input = openStream() ?: throw FsSendException("无法读取文件内容")
+        activeConn = conn
         try {
-            conn.outputStream.use { out -> input.use { it.copyTo(out) } }
+            conn.outputStream.use { out ->
+                input.use { ins ->
+                    // 分块拷贝：每块检查一次取消标记，大块传输也能及时停下
+                    val buf = ByteArray(64 * 1024)
+                    while (true) {
+                        throwIfCancelled()
+                        val n = ins.read(buf)
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                    }
+                }
+            }
         } catch (e: SocketTimeoutException) {
             throw FsSendException("对方无响应")
         } catch (e: IOException) {
+            // 取消时连接被主动断开，表现为 IOException，优先按取消处理
+            if (cancelled) throw FsSendException("已取消发送")
             throw FsSendException("连接失败：${e.message}")
+        } finally {
+            if (activeConn === conn) activeConn = null
         }
 
         return try {
@@ -175,6 +215,7 @@ class FileShareClient(private val lanSettings: LanSettings) {
         } catch (e: SocketTimeoutException) {
             throw FsSendException("对方无响应（等待确认超时）")
         } catch (e: IOException) {
+            if (cancelled) throw FsSendException("已取消发送")
             throw FsSendException("连接失败：${e.message}")
         }
     }

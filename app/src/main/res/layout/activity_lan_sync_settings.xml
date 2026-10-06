@@ -116,24 +116,18 @@
                     android:layout_height="wrap_content" />
             </LinearLayout>
 
-            <LinearLayout
+            <!-- 配对请求需手动确认时（未开自动同意）：后台靠通知弹窗，未授权通知权限时显示引导 -->
+            <TextView
+                android:id="@+id/tvNotifyPermissionHint"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="仅在打开软件时接收配对请求（后台时请求方会收到提示）"
-                    android:textSize="15sp" />
-
-                <androidx.appcompat.widget.SwitchCompat
-                    android:id="@+id/swPairForegroundOnly"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" />
-            </LinearLayout>
+                android:layout_marginTop="4dp"
+                android:background="?attr/selectableItemBackground"
+                android:padding="8dp"
+                android:text="后台接收配对请求需要通知权限，当前未开启，点我去开启"
+                android:textColor="#E53935"
+                android:textSize="13sp"
+                android:visibility="gone" />
 
             <LinearLayout
                 android:layout_width="match_parent"

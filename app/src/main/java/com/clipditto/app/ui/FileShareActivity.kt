@@ -349,7 +349,7 @@ class FileShareActivity : AppCompatActivity() {
         SendMeta(name ?: "文件", mime, tmp.length(), tmp)
     }.getOrNull()
 
-    /** 逐个发送所选文件，期间显示进度弹窗，结束后弹出汇总结果 */
+    /** 逐个发送所选文件，期间显示进度弹窗（可取消），结束后弹出汇总结果 */
     private fun sendFiles(uris: List<Uri>, host: String, port: Int) {
         val view = LayoutInflater.from(this).inflate(R.layout.dialog_fs_send, null)
         val progressBar = view.findViewById<ProgressBar>(R.id.progressSend).apply {
@@ -358,6 +358,7 @@ class FileShareActivity : AppCompatActivity() {
         }
         val tvFile = view.findViewById<TextView>(R.id.tvSendFile)
         val tvCount = view.findViewById<TextView>(R.id.tvSendCount)
+        val btnCancel = view.findViewById<Button>(R.id.btnSendCancel)
         view.findViewById<TextView>(R.id.tvSendTarget).text = "发送到 $host:$port"
         tvCount.text = "0/${uris.size}"
 
@@ -367,16 +368,25 @@ class FileShareActivity : AppCompatActivity() {
             .create()
         dialog.show()
 
+        client.resetCancel()
+        btnCancel.setOnClickListener {
+            // 断开当前连接并跳过剩余文件；已传完的文件不受影响
+            client.cancel()
+            btnCancel.isEnabled = false
+            btnCancel.text = "正在取消…"
+        }
+
         lifecycleScope.launch {
             var ok = 0
+            var cancelled = false
             val failures = mutableListOf<String>()
-            uris.forEachIndexed { i, uri ->
+            for ((i, uri) in uris.withIndex()) {
                 val meta = withContext(Dispatchers.IO) { resolveMeta(uri) }
                 if (meta == null) {
                     failures.add("（第 ${i + 1} 个文件无法读取信息）")
                     progressBar.progress = i + 1
                     tvCount.text = "${i + 1}/${uris.size}"
-                    return@forEachIndexed
+                    continue
                 }
                 tvFile.text = meta.name
                 tvCount.text = "${i + 1}/${uris.size}"
@@ -388,19 +398,28 @@ class FileShareActivity : AppCompatActivity() {
                         }
                     }.exceptionOrNull()?.message
                 }
-                if (err == null) ok++ else failures.add("${meta.name}：$err")
                 meta.tmpFile?.delete()
+                when {
+                    err == null -> ok++
+                    err.contains("已取消") -> {
+                        cancelled = true
+                        progressBar.progress = i + 1
+                        break
+                    }
+                    else -> failures.add("${meta.name}：$err")
+                }
                 progressBar.progress = i + 1
             }
             dialog.dismiss()
-            showSendResult(ok, failures)
+            showSendResult(ok, failures, cancelled)
         }
     }
 
     /** 发送结果弹窗：状态图标 + 汇总信息，按钮读秒 5 秒后自动关闭 */
-    private fun showSendResult(ok: Int, failures: List<String>) {
+    private fun showSendResult(ok: Int, failures: List<String>, cancelled: Boolean = false) {
         val view = LayoutInflater.from(this).inflate(R.layout.dialog_fs_result, null)
-        val allOk = failures.isEmpty()
+        // 全部成功绿 ✓，有失败或取消橙 !
+        val allOk = failures.isEmpty() && !cancelled
         // 全部成功绿 ✓，有失败橙 !
         view.findViewById<TextView>(R.id.tvFsResultIcon).apply {
             text = if (allOk) "✓" else "!"
@@ -412,9 +431,14 @@ class FileShareActivity : AppCompatActivity() {
             )
         }
         view.findViewById<TextView>(R.id.tvFsResultTitle).text =
-            if (allOk) "发送完成" else "部分发送失败"
+            when {
+                cancelled -> "已取消发送"
+                allOk -> "发送完成"
+                else -> "部分发送失败"
+            }
         view.findViewById<TextView>(R.id.tvFsResultMsg).text = buildString {
             append("成功 $ok 个")
+            if (cancelled) append("，其余已取消")
             if (failures.isNotEmpty()) {
                 append("，失败 ${failures.size} 个\n")
                 append(failures.joinToString("\n"))

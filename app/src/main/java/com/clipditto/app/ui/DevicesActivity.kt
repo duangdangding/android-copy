@@ -249,6 +249,10 @@ class DevicesActivity : AppCompatActivity() {
     companion object {
         /** 设备名称长度上限 */
         private const val MAX_NAME_LENGTH = 20
+        /** 配对通知跳转携带：请求方 deviceId（等待已结束时用于提示「已超时」） */
+        const val EXTRA_PAIR_DEVICE_ID = "pair_device_id"
+        /** 「配对请求已过期」通知跳转携带 */
+        const val EXTRA_PAIR_EXPIRED = "pair_expired"
     }
 
     override fun onResume() {
@@ -257,7 +261,17 @@ class DevicesActivity : AppCompatActivity() {
         // 注册配对确认弹窗：其他设备请求配对时在此页面弹出同意/拒绝
         LanSyncManager.pairApprovalUiHandler = { requester -> askPairApproval(requester) }
         // 通知路径挂起中的配对请求：用户点通知进入本页时补弹确认框
-        LanSyncManager.pendingPairRequester()?.let { showPendingPairDialog(it) }
+        val pendingRequester = LanSyncManager.pendingPairRequester()
+        if (pendingRequester != null) {
+            showPendingPairDialog(pendingRequester)
+        } else if (intent?.hasExtra(EXTRA_PAIR_DEVICE_ID) == true) {
+            // 点了配对通知但等待已结束（通知残留等场景）：明确告知，而不是静默无反应
+            Toast.makeText(this, "该配对请求已超时，请对方重新发起", Toast.LENGTH_LONG).show()
+        } else if (intent?.getBooleanExtra(EXTRA_PAIR_EXPIRED, false) == true) {
+            Toast.makeText(this, "配对请求已过期，请对方重新发起", Toast.LENGTH_LONG).show()
+        }
+        intent?.removeExtra(EXTRA_PAIR_DEVICE_ID)
+        intent?.removeExtra(EXTRA_PAIR_EXPIRED)
     }
 
     override fun onPause() {
@@ -494,8 +508,6 @@ class DevicesActivity : AppCompatActivity() {
                         "对方拒绝了本次配对"
                     is LanSyncManager.PairError.NeedConfirm ->
                         "对方未响应配对请求\n\n请让对方留意通知栏的「配对请求」通知，或让对方开启「自动同意配对请求」"
-                    is LanSyncManager.PairError.ForegroundOnly ->
-                        "对方仅在打开软件页面时接收配对请求\n\n请让对方打开软件后再发起配对"
                     is LanSyncManager.PairError.Blocked ->
                         "该设备在你的黑名单中\n\n请先在「黑名单」中将其移出"
                     is LanSyncManager.PairError.BlockedBy ->

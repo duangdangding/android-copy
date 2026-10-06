@@ -89,6 +89,28 @@ class LanSyncSettingsActivity : AppCompatActivity() {
         refreshSwitches()
         refreshDeviceRows()
         refreshSyncSettingsUi()
+        refreshNotifyPermissionHint()
+    }
+
+    /**
+     * 配对请求需手动确认时（未开自动同意），后台靠通知弹窗（Android 13+ 需通知权限）：
+     * 未授权时显示红色引导，点击跳转系统通知设置
+     */
+    private fun refreshNotifyPermissionHint() {
+        val hint = findViewById<TextView>(R.id.tvNotifyPermissionHint)
+        val needNotify = !LanSyncManager.settings().autoAcceptPair
+        val granted = android.os.Build.VERSION.SDK_INT < 33 ||
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        hint.visibility = if (needNotify && !granted) View.VISIBLE else View.GONE
+        hint.setOnClickListener {
+            runCatching {
+                startActivity(
+                    Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
+                )
+            }
+        }
     }
 
     // ---------------- 开关 ----------------
@@ -109,9 +131,7 @@ class LanSyncSettingsActivity : AppCompatActivity() {
         }
         findViewById<SwitchCompat>(R.id.swAutoAccept).setOnCheckedChangeListener { _, on ->
             LanSyncManager.settings().autoAcceptPair = on
-        }
-        findViewById<SwitchCompat>(R.id.swPairForegroundOnly).setOnCheckedChangeListener { _, on ->
-            LanSyncManager.settings().pairForegroundOnly = on
+            refreshNotifyPermissionHint()
         }
         findViewById<SwitchCompat>(R.id.swEncryption).setOnCheckedChangeListener { _, on ->
             LanSyncManager.settings().syncEncryption = on
@@ -124,7 +144,6 @@ class LanSyncSettingsActivity : AppCompatActivity() {
         findViewById<SwitchCompat>(R.id.swSharing).isChecked = s.sharing
         findViewById<SwitchCompat>(R.id.swAutoSync).isChecked = s.autoSync
         findViewById<SwitchCompat>(R.id.swAutoAccept).isChecked = s.autoAcceptPair
-        findViewById<SwitchCompat>(R.id.swPairForegroundOnly).isChecked = s.pairForegroundOnly
         findViewById<SwitchCompat>(R.id.swEncryption).isChecked = s.syncEncryption
         refreshPairingCode()
     }

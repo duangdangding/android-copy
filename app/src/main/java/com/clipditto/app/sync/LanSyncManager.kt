@@ -746,10 +746,17 @@ object LanSyncManager {
         return try {
             postPairRequestNotification(requester, w.notifyId)
             val decided = w.latch.await(pairConfirmTimeoutSec, TimeUnit.SECONDS)
-            if (decided) w.result.get() else null
+            if (decided) {
+                cancelPairNotification(w.notifyId)
+                w.result.get()
+            } else {
+                // 超时：把通知换成「已过期」提示（而不是悄悄撤掉），
+                // 用户晚点看到也知道要让对方重新发起
+                postPairExpiredNotification(requester, w.notifyId)
+                null
+            }
         } finally {
             pendingPair.remove(requester.deviceId)
-            cancelPairNotification(w.notifyId)
         }
     }
 
@@ -780,7 +787,8 @@ object LanSyncManager {
         )
         val openPi = PendingIntent.getActivity(
             appContext, notifyId,
-            Intent(appContext, com.clipditto.app.ui.DevicesActivity::class.java),
+            Intent(appContext, com.clipditto.app.ui.DevicesActivity::class.java)
+                .putExtra(com.clipditto.app.ui.DevicesActivity.EXTRA_PAIR_DEVICE_ID, requester.deviceId),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val modelSuffix = requester.model?.takeIf { it.isNotBlank() }?.let { "（$it）" } ?: ""
@@ -792,6 +800,28 @@ object LanSyncManager {
             .setAutoCancel(true)
             .addAction(0, "同意配对", actionPi(PairActionReceiver.ACTION_ACCEPT))
             .addAction(0, "拒绝", actionPi(PairActionReceiver.ACTION_REJECT))
+            .build()
+        runCatching {
+            (appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .notify(notifyId, n)
+        }
+    }
+
+    /** 「配对请求已过期」通知：请求超时无人处理后替换原通知，点按打开设备页 */
+    private fun postPairExpiredNotification(requester: LanDevice, notifyId: Int) {
+        val openPi = PendingIntent.getActivity(
+            appContext, notifyId,
+            Intent(appContext, com.clipditto.app.ui.DevicesActivity::class.java)
+                .putExtra(com.clipditto.app.ui.DevicesActivity.EXTRA_PAIR_EXPIRED, true),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val modelSuffix = requester.model?.takeIf { it.isNotBlank() }?.let { "（$it）" } ?: ""
+        val n = NotificationCompat.Builder(appContext, App.CHANNEL_PAIR)
+            .setSmallIcon(R.drawable.ic_clipboard)
+            .setContentTitle("配对请求已过期")
+            .setContentText("「${requester.displayName}$modelSuffix」的配对请求未及时处理，请对方重新发起")
+            .setContentIntent(openPi)
+            .setAutoCancel(true)
             .build()
         runCatching {
             (appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
@@ -813,7 +843,6 @@ object LanSyncManager {
         object SharingOff : PairError()
         object Rejected : PairError()
         object NeedConfirm : PairError()
-        object ForegroundOnly : PairError()
         object Blocked : PairError()
         object BlockedBy : PairError()
         data class ConnectFail(val detail: String) : PairError()
@@ -846,8 +875,6 @@ object LanSyncManager {
                 PairError.Rejected
             } catch (e: PairNeedConfirmException) {
                 PairError.NeedConfirm
-            } catch (e: PairForegroundOnlyException) {
-                PairError.ForegroundOnly
             } catch (e: Exception) {
                 Log.w(TAG, "配对连接失败: ${e.message}")
                 PairError.ConnectFail("${fresh.host}:${fresh.port} ${e.javaClass.simpleName}: ${e.message}")
