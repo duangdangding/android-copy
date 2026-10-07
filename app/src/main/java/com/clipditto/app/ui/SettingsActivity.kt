@@ -24,6 +24,7 @@ import com.clipditto.app.backup.ConfigManager
 import com.clipditto.app.data.ClipRepository
 import com.clipditto.app.service.ClipboardService
 import com.clipditto.app.util.AppSettings
+import com.clipditto.app.util.CustomBackground
 import com.google.android.material.appbar.MaterialToolbar
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -62,6 +63,21 @@ class SettingsActivity : AppCompatActivity() {
     private val importConfigLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let { doImportConfig(it) }
+        }
+
+    /** 选择背景图片：复制到应用私有目录（压缩到 2048px 内）后进入预览页调整效果 */
+    private val bgImageLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri ?: return@registerForActivityResult
+            if (CustomBackground.importImage(this, uri)) {
+                // 选图成功视为要启用自定义背景，直接进入预览页调模式/旋转/区域
+                AppSettings.setBgEnabled(this, true)
+                ClipboardService.refreshAppearance(this)
+                refreshBgRows()
+                startActivity(Intent(this, BgPreviewActivity::class.java))
+            } else {
+                Toast.makeText(this, "图片读取失败，请换一张试试", Toast.LENGTH_LONG).show()
+            }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -174,6 +190,34 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.rowMaxRecords).setOnClickListener { showMaxRecordsDialog() }
         findViewById<android.view.View>(R.id.rowRetention).setOnClickListener { showRetentionDialog() }
 
+        // ---- 自定义背景 ----
+        findViewById<SwitchCompat>(R.id.swBgEnabled).setOnClickListener {
+            val now = findViewById<SwitchCompat>(R.id.swBgEnabled).isChecked
+            if (now && !CustomBackground.hasImage(this)) {
+                // 还没选图片：先去选图，选图成功后自动开启
+                findViewById<SwitchCompat>(R.id.swBgEnabled).isChecked = false
+                bgImageLauncher.launch(arrayOf("image/*"))
+                return@setOnClickListener
+            }
+            AppSettings.setBgEnabled(this, now)
+            ClipboardService.refreshAppearance(this)
+            Toast.makeText(
+                this,
+                if (now) "自定义背景已开启" else "自定义背景已关闭",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+        findViewById<android.view.View>(R.id.rowBgImage).setOnClickListener { showBgImageDialog() }
+        findViewById<android.view.View>(R.id.rowBgMode).setOnClickListener {
+            // 预览页里调整 模式/透明度/旋转方向/图片长宽
+            if (CustomBackground.hasImage(this)) {
+                startActivity(Intent(this, BgPreviewActivity::class.java))
+            } else {
+                Toast.makeText(this, "请先选择背景图片", Toast.LENGTH_SHORT).show()
+            }
+        }
+        findViewById<android.view.View>(R.id.rowBgTarget).setOnClickListener { showBgTargetDialog() }
+
         // ---- 存储位置 ----
         findViewById<android.view.View>(R.id.rowBackupDir).setOnClickListener { showBackupDirDialog() }
         findViewById<Button>(R.id.btnExportConfig).setOnClickListener { onExportConfigClick() }
@@ -197,6 +241,7 @@ class SettingsActivity : AppCompatActivity() {
         refreshThemeRow()
         refreshMaxRecordsRow()
         refreshRetentionRow()
+        refreshBgRows()
         refreshBackupDirRow()
     }
 
@@ -353,6 +398,78 @@ class SettingsActivity : AppCompatActivity() {
                 AppCompatDelegate.setDefaultNightMode(modes[which])
                 Toast.makeText(this, "主题已切换为${themeLabel(modes[which])}", Toast.LENGTH_SHORT).show()
             }
+            .show()
+    }
+
+    // ---------------- 自定义背景 ----------------
+
+    private fun refreshBgRows() {
+        findViewById<SwitchCompat>(R.id.swBgEnabled).isChecked =
+            AppSettings.isBgEnabled(this)
+        findViewById<TextView>(R.id.tvBgImageValue).text =
+            if (CustomBackground.hasImage(this)) "已设置" else "未设置"
+        val modeLabel = when (AppSettings.getBgMode(this)) {
+            AppSettings.BG_MODE_TILE -> "平铺"
+            AppSettings.BG_MODE_CUSTOM -> "自定义尺寸"
+            else -> "拉伸"
+        }
+        val r = AppSettings.getBgRegion(this)
+        val cropped = r[0] > 0f || r[1] > 0f || r[2] < 1f || r[3] < 1f
+        findViewById<TextView>(R.id.tvBgModeValue).text =
+            "$modeLabel · ${AppSettings.getBgRotation(this)}°" +
+                if (cropped) " · 已选区域" else ""
+        val main = AppSettings.isBgTargetMain(this)
+        val panel = AppSettings.isBgTargetPanel(this)
+        findViewById<TextView>(R.id.tvBgTargetValue).text = when {
+            main && panel -> "主页 + 悬浮列表"
+            main -> "主页"
+            panel -> "悬浮列表"
+            else -> "无"
+        }
+    }
+
+    private fun showBgImageDialog() {
+        val has = CustomBackground.hasImage(this)
+        val items = if (has) arrayOf("更换图片", "清除图片") else arrayOf("选择图片")
+        MaterialAlertDialogBuilder(this)
+            .setTitle("背景图片")
+            .setItems(items) { _, which ->
+                if (which == 0) {
+                    bgImageLauncher.launch(arrayOf("image/*"))
+                } else {
+                    CustomBackground.clearImage(this)
+                    // 没有图片背景无法生效，一并关闭开关
+                    AppSettings.setBgEnabled(this, false)
+                    ClipboardService.refreshAppearance(this)
+                    refreshBgRows()
+                    Toast.makeText(this, "背景图片已清除", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .show()
+    }
+
+    private fun showBgTargetDialog() {
+        val items = arrayOf("主页（含工具栏）", "悬浮列表")
+        val checked = booleanArrayOf(
+            AppSettings.isBgTargetMain(this),
+            AppSettings.isBgTargetPanel(this)
+        )
+        MaterialAlertDialogBuilder(this)
+            .setTitle("应用范围")
+            .setMultiChoiceItems(items, checked) { _, which, isChecked ->
+                checked[which] = isChecked
+            }
+            .setPositiveButton("确定") { _, _ ->
+                if (!checked[0] && !checked[1]) {
+                    Toast.makeText(this, "至少保留一个应用范围", Toast.LENGTH_SHORT).show()
+                } else {
+                    AppSettings.setBgTargetMain(this, checked[0])
+                    AppSettings.setBgTargetPanel(this, checked[1])
+                    ClipboardService.refreshAppearance(this)
+                }
+                refreshBgRows()
+            }
+            .setNegativeButton("取消", null)
             .show()
     }
 

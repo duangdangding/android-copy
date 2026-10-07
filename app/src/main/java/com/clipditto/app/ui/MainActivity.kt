@@ -108,6 +108,10 @@ class MainActivity : AppCompatActivity() {
         com.clipditto.app.util.WindowEffect.apply(this)
         // 沉浸式：Toolbar 背景延伸到状态栏，底部避开手势导航条
         EdgeToEdge.apply(this, findViewById(R.id.toolbar))
+        // 自定义背景：图片覆盖主页（含工具栏），未启用时恢复主题默认底色
+        com.clipditto.app.util.CustomBackground.applyToActivity(
+            this, findViewById(R.id.root), findViewById(R.id.toolbar)
+        )
 
         repo = ClipRepository(this)
         tvEmpty = findViewById(R.id.tvEmpty)
@@ -265,6 +269,10 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         // 从设置页返回时，窗口效果可能已变更，重新应用
         com.clipditto.app.util.WindowEffect.apply(this)
+        // 自定义背景可能在设置页被修改（图片/模式/透明度/范围），统一重设
+        com.clipditto.app.util.CustomBackground.applyToActivity(
+            this, findViewById(R.id.root), findViewById(R.id.toolbar)
+        )
         // 主界面打开时收起悬浮列表面板（默认关闭弹窗列表），悬浮球保持显示
         ClipboardService.instance?.dismissPanel()
         refreshListenButton()

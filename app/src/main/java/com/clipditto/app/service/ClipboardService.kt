@@ -49,6 +49,7 @@ import com.clipditto.app.ui.ItemActionButtons
 import com.clipditto.app.ui.MainActivity
 import com.clipditto.app.ui.SwipeActions
 import com.clipditto.app.util.AppSettings
+import com.clipditto.app.util.CustomBackground
 import com.clipditto.app.util.FuzzySearch
 import com.clipditto.app.util.Haptics
 import com.clipditto.app.util.MediaFiles
@@ -338,11 +339,16 @@ class ClipboardService : Service() {
                 startForeground(NOTIFY_ID, buildNotification())
                 applyBallAppearance()
                 panelView?.alpha = AppSettings.getPanelAlpha(this) / 100f
-                // 窗口效果涉及窗口 flags（模糊开关），需要 updateViewLayout 才生效
+                // 窗口效果涉及窗口 flags（模糊开关），需要 updateViewLayout 才生效；
+                // 自定义背景启用时优先铺背景图并关闭底层模糊
                 val pv = panelView
                 val pp = panelParams
                 if (pv != null && pp != null) {
-                    applyPanelEffect(pv, pp)
+                    if (CustomBackground.applyToPanel(this, pv)) {
+                        clearPanelBlur(pp)
+                    } else {
+                        applyPanelEffect(pv, pp)
+                    }
                     runCatching { wm.updateViewLayout(pv, pp) }
                 }
                 return START_STICKY
@@ -753,8 +759,9 @@ class ClipboardService : Service() {
             y = savedY
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
         }
-        // 窗口效果（默认/亚克力/半透明）：设置页调整后经 refreshAppearance 立即重设
-        applyPanelEffect(view, params)
+        // 窗口效果（默认/亚克力/半透明）：设置页调整后经 refreshAppearance 立即重设；
+        // 启用自定义背景且应用到悬浮列表时，背景图优先于窗口效果背景（圆角经轮廓裁剪保持）
+        if (!CustomBackground.applyToPanel(this, view)) applyPanelEffect(view, params)
 
         val recycler = view.findViewById<RecyclerView>(R.id.panelRecycler)
         val tvEmpty = view.findViewById<TextView>(R.id.tvPanelEmpty)

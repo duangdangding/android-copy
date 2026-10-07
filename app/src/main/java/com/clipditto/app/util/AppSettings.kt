@@ -139,6 +139,134 @@ object AppSettings {
         prefs(context).edit().putInt(KEY_RETENTION_DAYS, days.coerceAtLeast(0)).apply()
     }
 
+    // ---------------- 自定义背景 ----------------
+
+    private const val KEY_BG_ENABLED = "bg_enabled"
+
+    /** 是否启用自定义背景（图片覆盖主页工具栏/悬浮列表），默认关闭 */
+    fun isBgEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_BG_ENABLED, false)
+
+    fun setBgEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_BG_ENABLED, enabled).apply()
+    }
+
+    private const val KEY_BG_TARGET_MAIN = "bg_target_main"
+
+    /** 背景应用到主页（含工具栏），默认开启 */
+    fun isBgTargetMain(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_BG_TARGET_MAIN, true)
+
+    fun setBgTargetMain(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean(KEY_BG_TARGET_MAIN, on).apply()
+    }
+
+    private const val KEY_BG_TARGET_PANEL = "bg_target_panel"
+
+    /** 背景应用到悬浮列表，默认开启 */
+    fun isBgTargetPanel(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_BG_TARGET_PANEL, true)
+
+    fun setBgTargetPanel(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean(KEY_BG_TARGET_PANEL, on).apply()
+    }
+
+    private const val KEY_BG_MODE = "bg_mode"
+
+    /** 显示模式：拉伸（图片/所选区域填满目标区域） */
+    const val BG_MODE_STRETCH = 0
+
+    /** 显示模式：平铺（按原图尺寸重复排列） */
+    const val BG_MODE_TILE = 1
+
+    /** 显示模式：自定义尺寸（图片按目标区域宽高的指定百分比显示，居中） */
+    const val BG_MODE_CUSTOM = 3
+
+    /**
+     * 背景图显示模式，默认拉伸。
+     * 历史上 2 表示"选取区域"模式——选区现在是独立的裁剪参数（作用于原图后再按模式显示），
+     * 旧值统一归位为拉伸。
+     */
+    fun getBgMode(context: Context): Int =
+        when (prefs(context).getInt(KEY_BG_MODE, BG_MODE_STRETCH)) {
+            BG_MODE_TILE -> BG_MODE_TILE
+            BG_MODE_CUSTOM -> BG_MODE_CUSTOM
+            else -> BG_MODE_STRETCH
+        }
+
+    fun setBgMode(context: Context, mode: Int) {
+        prefs(context).edit().putInt(KEY_BG_MODE, mode).apply()
+    }
+
+    private const val KEY_BG_ALPHA = "bg_alpha"
+
+    /** 背景图透明度（百分比 10~100），默认 100 不透明 */
+    fun getBgAlpha(context: Context): Int =
+        prefs(context).getInt(KEY_BG_ALPHA, 100)
+
+    fun setBgAlpha(context: Context, percent: Int) {
+        prefs(context).edit().putInt(KEY_BG_ALPHA, percent.coerceIn(10, 100)).apply()
+    }
+
+    private const val KEY_BG_REGION_L = "bg_region_l"
+    private const val KEY_BG_REGION_T = "bg_region_t"
+    private const val KEY_BG_REGION_R = "bg_region_r"
+    private const val KEY_BG_REGION_B = "bg_region_b"
+
+    /** 选取区域（归一化 0~1：左/上/右/下，以原图为基准），默认整张图片 */
+    fun getBgRegion(context: Context): FloatArray {
+        val p = prefs(context)
+        return floatArrayOf(
+            p.getFloat(KEY_BG_REGION_L, 0f),
+            p.getFloat(KEY_BG_REGION_T, 0f),
+            p.getFloat(KEY_BG_REGION_R, 1f),
+            p.getFloat(KEY_BG_REGION_B, 1f)
+        )
+    }
+
+    fun setBgRegion(context: Context, left: Float, top: Float, right: Float, bottom: Float) {
+        prefs(context).edit()
+            .putFloat(KEY_BG_REGION_L, left)
+            .putFloat(KEY_BG_REGION_T, top)
+            .putFloat(KEY_BG_REGION_R, right)
+            .putFloat(KEY_BG_REGION_B, bottom)
+            .apply()
+    }
+
+    private const val KEY_BG_ROTATION = "bg_rotation"
+
+    /** 背景图旋转方向（0/90/180/270 度，顺时针），默认 0 不旋转 */
+    fun getBgRotation(context: Context): Int {
+        val v = prefs(context).getInt(KEY_BG_ROTATION, 0)
+        return ((v % 360) + 360) % 360
+    }
+
+    fun setBgRotation(context: Context, degrees: Int) {
+        // 只保留 90 的整数倍，非法值就近归位
+        val norm = ((degrees % 360) + 360) % 360
+        val snapped = ((norm + 45) / 90 * 90) % 360
+        prefs(context).edit().putInt(KEY_BG_ROTATION, snapped).apply()
+    }
+
+    private const val KEY_BG_SCALE_W = "bg_scale_w"
+    private const val KEY_BG_SCALE_H = "bg_scale_h"
+
+    /** 自定义尺寸模式：图片显示宽度占目标区域宽度的百分比（10~200），默认 100 */
+    fun getBgScaleW(context: Context): Int =
+        prefs(context).getInt(KEY_BG_SCALE_W, 100)
+
+    fun setBgScaleW(context: Context, percent: Int) {
+        prefs(context).edit().putInt(KEY_BG_SCALE_W, percent.coerceIn(10, 200)).apply()
+    }
+
+    /** 自定义尺寸模式：图片显示高度占目标区域高度的百分比（10~200），默认 100 */
+    fun getBgScaleH(context: Context): Int =
+        prefs(context).getInt(KEY_BG_SCALE_H, 100)
+
+    fun setBgScaleH(context: Context, percent: Int) {
+        prefs(context).edit().putInt(KEY_BG_SCALE_H, percent.coerceIn(10, 200)).apply()
+    }
+
     // ---------------- 存储位置 ----------------
 
     private const val KEY_BACKUP_TREE_URI = "backup_tree_uri"

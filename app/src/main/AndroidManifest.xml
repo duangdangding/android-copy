@@ -90,6 +90,11 @@
             android:name=".ui.SettingsActivity"
             android:exported="false" />
 
+        <!-- 自定义背景：预览效果 + 显示模式/旋转方向/区域选取 -->
+        <activity
+            android:name=".ui.BgPreviewActivity"
+            android:exported="false" />
+
         <!-- 文件接收请求通知的 接收/拒绝 按钮 -->
         <receiver
             android:name=".share.FileShareActionReceiver"
