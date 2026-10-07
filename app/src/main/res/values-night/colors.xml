@@ -37,6 +37,12 @@
     <color name="text_tertiary">#FF8E8A96</color>
     <!-- 背景 -->
     <color name="panel_bg">#F524222B</color>
+    <!-- 悬浮面板窗口效果：亚克力（配系统模糊，更透）/ 半透明（无模糊，稍厚保证可读性） -->
+    <color name="panel_bg_acrylic">#9924222B</color>
+    <color name="panel_bg_translucent">#D924222B</color>
+    <!-- 页面窗口效果：亚克力 / 半透明（基于 md_background 加透明度） -->
+    <color name="window_bg_acrylic">#B3141218</color>
+    <color name="window_bg_translucent">#E6141218</color>
     <color name="item_bg">#FF2A2830</color>
     <color name="item_bg_selected">#FF453C63</color>
     <color name="item_bg_fav">#FF3A3120</color>

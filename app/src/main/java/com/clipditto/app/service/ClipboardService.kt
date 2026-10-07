@@ -333,11 +333,18 @@ class ClipboardService : Service() {
                 hidePanel()
                 return START_STICKY
             }
-            // 设置页调整了悬浮球大小/透明度、弹窗列表透明度：立即应用到已显示的悬浮窗
+            // 设置页调整了悬浮球大小/透明度、弹窗列表透明度/窗口效果：立即应用到已显示的悬浮窗
             ACTION_REFRESH_APPEARANCE -> {
                 startForeground(NOTIFY_ID, buildNotification())
                 applyBallAppearance()
                 panelView?.alpha = AppSettings.getPanelAlpha(this) / 100f
+                // 窗口效果涉及窗口 flags（模糊开关），需要 updateViewLayout 才生效
+                val pv = panelView
+                val pp = panelParams
+                if (pv != null && pp != null) {
+                    applyPanelEffect(pv, pp)
+                    runCatching { wm.updateViewLayout(pv, pp) }
+                }
                 return START_STICKY
             }
         }
@@ -746,6 +753,8 @@ class ClipboardService : Service() {
             y = savedY
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
         }
+        // 窗口效果（默认/亚克力/半透明）：设置页调整后经 refreshAppearance 立即重设
+        applyPanelEffect(view, params)
 
         val recycler = view.findViewById<RecyclerView>(R.id.panelRecycler)
         val tvEmpty = view.findViewById<TextView>(R.id.tvPanelEmpty)
@@ -947,6 +956,40 @@ class ClipboardService : Service() {
     }
 
     private var panelParams: WindowManager.LayoutParams? = null
+
+    /**
+     * 应用窗口效果到悬浮面板：
+     * 默认 = 不透明纯色底；亚克力 = 半透明底 + 系统模糊底层内容（Android 12+，低版本自动降级为半透明底）；
+     * 半透明 = 半透明纯色底，全版本可用。切换效果经 refreshAppearance 对已显示面板即时生效。
+     */
+    private fun applyPanelEffect(view: android.view.View, params: WindowManager.LayoutParams) {
+        when (AppSettings.getWindowEffect(this)) {
+            AppSettings.WINDOW_EFFECT_ACRYLIC -> {
+                view.setBackgroundResource(R.drawable.bg_panel_acrylic)
+                if (Build.VERSION.SDK_INT >= 31) {
+                    params.flags = params.flags or WindowManager.LayoutParams.FLAG_BLUR_BEHIND
+                    params.blurBehindRadius =
+                        (18 * resources.displayMetrics.density).toInt().coerceIn(1, 150)
+                }
+            }
+            AppSettings.WINDOW_EFFECT_TRANSLUCENT -> {
+                view.setBackgroundResource(R.drawable.bg_panel_translucent)
+                clearPanelBlur(params)
+            }
+            else -> {
+                view.setBackgroundResource(R.drawable.bg_panel)
+                clearPanelBlur(params)
+            }
+        }
+    }
+
+    /** 关闭面板窗口的底层模糊（切回默认/半透明效果时调用） */
+    private fun clearPanelBlur(params: WindowManager.LayoutParams) {
+        if (Build.VERSION.SDK_INT >= 31) {
+            params.flags = params.flags and WindowManager.LayoutParams.FLAG_BLUR_BEHIND.inv()
+            params.blurBehindRadius = 0
+        }
+    }
 
     /** 切换面板是否持有窗口焦点（搜索框输入时需要焦点弹出键盘，其余时间不抢焦点） */
     private fun makePanelFocusable(focusable: Boolean) {

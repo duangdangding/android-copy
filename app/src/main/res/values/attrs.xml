@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 窗口效果相关主题属性：默认主题指向主色/原页面底色，效果主题换成半透明/透明，
+         布局全程引用这些属性，切换效果 recreate 即可整体生效，运行时不改任何视图属性 -->
+    <attr name="effectToolbarBg" format="color|reference" />
+    <attr name="effectToolbarFg" format="color|reference" />
+    <attr name="effectPageBg" format="color|reference" />
+</resources>

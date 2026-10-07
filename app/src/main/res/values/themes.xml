@@ -30,6 +30,10 @@
         <item name="colorSurfaceInverse">@color/md_inverse_surface</item>
         <item name="colorOnSurfaceInverse">@color/md_inverse_on_surface</item>
         <item name="colorPrimaryInverse">@color/md_inverse_primary</item>
+        <!-- 窗口效果默认值：工具栏主色底 + colorOnPrimary 前景 + 主页 page_bg（效果主题里替换） -->
+        <item name="effectToolbarBg">?attr/colorPrimary</item>
+        <item name="effectToolbarFg">?attr/colorOnPrimary</item>
+        <item name="effectPageBg">@color/page_bg</item>
         <!-- 沉浸式：状态栏透明，Toolbar 延伸进去；图标亮暗由 EdgeToEdge 按主题色亮度动态设置 -->
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>
@@ -59,12 +63,30 @@
 
     <!-- 主页 Toolbar：主色底上图标颜色跟随 colorOnPrimary；弹出菜单用 PopupMenuTheme，跟随页面浅色/深色 -->
     <style name="ToolbarTheme" parent="ThemeOverlay.Material3.Dark">
-        <item name="android:textColorSecondary">?attr/colorOnPrimary</item>
+        <item name="android:textColorSecondary">?attr/effectToolbarFg</item>
+        <!-- 纯文字菜单项（如设备同步页「设置」）的颜色：跟随工具栏前景 -->
+        <item name="actionMenuTextColor">?attr/effectToolbarFg</item>
         <item name="popupTheme">@style/PopupMenuTheme</item>
     </style>
 
     <!-- Toolbar 溢出菜单弹层：浅色（夜间模式在 values-night 里换成深色） -->
     <style name="PopupMenuTheme" parent="ThemeOverlay.Material3.Light" />
+
+    <!-- 窗口效果主题：Activity 在 super.onCreate 前按设置 setTheme，窗口创建即是对应背景，
+         避免"先按主题默认背景渲染一帧、再被代码换掉"的闪变；Android 12+ 的模糊属性在 values-v31 追加 -->
+    <style name="Theme.ClipDitto.Effect.Acrylic" parent="Theme.ClipDitto">
+        <item name="android:windowBackground">@color/window_bg_acrylic</item>
+        <item name="effectToolbarBg">@color/window_bg_acrylic</item>
+        <item name="effectToolbarFg">@color/text_primary</item>
+        <item name="effectPageBg">@android:color/transparent</item>
+    </style>
+
+    <style name="Theme.ClipDitto.Effect.Translucent" parent="Theme.ClipDitto">
+        <item name="android:windowBackground">@color/window_bg_translucent</item>
+        <item name="effectToolbarBg">@color/window_bg_translucent</item>
+        <item name="effectToolbarFg">@color/text_primary</item>
+        <item name="effectPageBg">@android:color/transparent</item>
+    </style>
 
     <!-- 设置页：分节标题（颜色跟随主题主色，配合动态取色联动） -->
     <style name="SettingsSectionTitle">

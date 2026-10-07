@@ -18,6 +18,15 @@ object EdgeToEdge {
 
     fun apply(activity: Activity, toolbar: View) {
         WindowCompat.setDecorFitsSystemWindows(activity.window, false)
+        // 状态栏底色与工具栏一致（默认主色/效果模式半透明色）：
+        // 工具栏要等 insets 回调才延伸进状态栏，不设的话第一帧会露出窗口底色闪一下
+        runCatching {
+            val taBg = toolbar.context.obtainStyledAttributes(
+                intArrayOf(com.clipditto.app.R.attr.effectToolbarBg)
+            )
+            activity.window.statusBarColor = taBg.getColor(0, Color.TRANSPARENT)
+            taBg.recycle()
+        }
         // 状态栏图标亮暗跟随主题主色亮度：深色主色（浅色模式）用白图标，浅色主色（深色模式）用黑图标
         runCatching {
             val ta = toolbar.context.obtainStyledAttributes(

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- WindowEffect 保存页面根布局原背景的 tag key（运行中切换效果时还原用） -->
+    <item name="tag_window_effect_bg" type="id" />
+</resources>

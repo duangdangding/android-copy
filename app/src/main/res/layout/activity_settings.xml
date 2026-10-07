@@ -11,11 +11,11 @@
         android:layout_width="match_parent"
         android:layout_height="40dp"
         android:minHeight="0dp"
-        android:background="?attr/colorPrimary"
+        android:background="?attr/effectToolbarBg"
         app:navigationIcon="?attr/homeAsUpIndicator"
-        app:navigationIconTint="?attr/colorOnPrimary"
+        app:navigationIconTint="?attr/effectToolbarFg"
         app:title="设置"
-        app:titleTextColor="?attr/colorOnPrimary" />
+        app:titleTextColor="?attr/effectToolbarFg" />
 
     <ScrollView
         android:layout_width="match_parent"
@@ -281,6 +281,35 @@
 
                 <TextView
                     android:id="@+id/tvThemeValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <!-- 全局窗口效果：默认 / 亚克力 / 半透明，作用于所有页面窗口与悬浮面板 -->
+            <LinearLayout
+                android:id="@+id/rowWindowEffect"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="12dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="窗口效果"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:id="@+id/tvWindowEffectValue"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:textColor="@color/text_secondary"

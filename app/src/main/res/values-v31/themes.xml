@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+：亚克力主题追加系统窗口模糊（values 里的同名样式被整份替换，需带全量属性） -->
+    <style name="Theme.ClipDitto.Effect.Acrylic" parent="Theme.ClipDitto">
+        <item name="android:windowBackground">@color/window_bg_acrylic</item>
+        <item name="android:windowBlurBehindEnabled">true</item>
+        <item name="android:windowBlurBehindRadius">20dp</item>
+        <item name="android:windowBackgroundBlurRadius">20dp</item>
+        <item name="effectToolbarBg">@color/window_bg_acrylic</item>
+        <item name="effectToolbarFg">@color/text_primary</item>
+        <item name="effectPageBg">@android:color/transparent</item>
+    </style>
+</resources>

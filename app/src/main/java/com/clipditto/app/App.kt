@@ -59,10 +59,10 @@ class App : Application() {
             "同步结果",
             NotificationManager.IMPORTANCE_LOW
         )
-        // 文件共享接收请求：需要用户及时处理，用高重要性（横幅+声音）
+        // 文件局域网传输接收请求：需要用户及时处理，用高重要性（横幅+声音）
         val fileShareChannel = NotificationChannel(
             CHANNEL_FILE_SHARE,
-            "文件共享",
+            "文件局域网传输",
             NotificationManager.IMPORTANCE_HIGH
         )
         // 配对请求：需要用户及时处理，用高重要性（横幅+声音）

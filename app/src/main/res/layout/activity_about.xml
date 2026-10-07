@@ -10,11 +10,11 @@
         android:layout_width="match_parent"
         android:layout_height="40dp"
         android:minHeight="0dp"
-        android:background="?attr/colorPrimary"
+        android:background="?attr/effectToolbarBg"
         app:navigationIcon="?attr/homeAsUpIndicator"
-        app:navigationIconTint="?attr/colorOnPrimary"
+        app:navigationIconTint="?attr/effectToolbarFg"
         app:title="关于"
-        app:titleTextColor="?attr/colorOnPrimary" />
+        app:titleTextColor="?attr/effectToolbarFg" />
 
     <!-- 应用信息：居中图标 + 名称 + 版本 + 简介 -->
     <LinearLayout
@@ -54,7 +54,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
             android:gravity="center"
-            android:text="安卓本地剪贴板记录工具：悬浮球 + 自动记录 + 局域网同步与文件共享"
+            android:text="安卓本地剪贴板记录工具：悬浮球 + 自动记录 + 局域网同步与文件局域网传输"
             android:textColor="@color/text_hint"
             android:textSize="12sp" />
     </LinearLayout>

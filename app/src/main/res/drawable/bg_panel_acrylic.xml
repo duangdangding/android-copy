@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 悬浮面板「亚克力」窗口效果背景：半透明圆角底，配合系统模糊（FLAG_BLUR_BEHIND）透出毛玻璃质感 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/panel_bg_acrylic" />
+    <corners android:radius="20dp" />
+    <stroke android:width="0.5dp" android:color="@color/divider" />
+</shape>

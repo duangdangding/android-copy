@@ -65,8 +65,12 @@ class SettingsActivity : AppCompatActivity() {
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 按窗口效果选主题：窗口创建即是对应背景/模糊，避免进入时闪变
+        setTheme(com.clipditto.app.util.WindowEffect.themeRes(this))
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
+        // 全局窗口效果（默认/亚克力/半透明），切换时本页立即生效
+        com.clipditto.app.util.WindowEffect.apply(this)
         // 沉浸式：Toolbar 背景延伸到状态栏，底部避开手势导航条
         EdgeToEdge.apply(this, findViewById(R.id.toolbar))
         repo = ClipRepository(this)
@@ -143,6 +147,9 @@ class SettingsActivity : AppCompatActivity() {
 
         // ---- 外观主题 ----
         findViewById<android.view.View>(R.id.rowTheme).setOnClickListener { showThemeDialog() }
+        findViewById<android.view.View>(R.id.rowWindowEffect).setOnClickListener {
+            showWindowEffectDialog()
+        }
 
         // ---- 跟随系统主题色（Material You 动态取色，仅 Android 12+，重启应用后生效） ----
         if (android.os.Build.VERSION.SDK_INT >= 31) {
@@ -177,6 +184,8 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 导入配置等路径可能改动窗口效果，回到本页时统一重新应用
+        com.clipditto.app.util.WindowEffect.apply(this)
         refreshBallSwitch()
         refreshBallSizeRow()
         refreshBallAlphaRow()
@@ -184,6 +193,7 @@ class SettingsActivity : AppCompatActivity() {
             AppSettings.isHapticEnabled(this)
         refreshPanelSwitch()
         refreshPanelAlphaRow()
+        refreshWindowEffectRow()
         refreshThemeRow()
         refreshMaxRecordsRow()
         refreshRetentionRow()
@@ -284,6 +294,49 @@ class SettingsActivity : AppCompatActivity() {
     private fun refreshThemeRow() {
         findViewById<TextView>(R.id.tvThemeValue).text =
             themeLabel(AppSettings.getThemeMode(this))
+    }
+
+    private fun refreshWindowEffectRow() {
+        findViewById<TextView>(R.id.tvWindowEffectValue).text =
+            windowEffectLabel(AppSettings.getWindowEffect(this))
+    }
+
+    private fun windowEffectLabel(effect: Int): String = when (effect) {
+        AppSettings.WINDOW_EFFECT_ACRYLIC -> "亚克力"
+        AppSettings.WINDOW_EFFECT_TRANSLUCENT -> "半透明"
+        else -> "默认"
+    }
+
+    /**
+     * 窗口效果选择：选中即写入，本页窗口立即切换效果（WindowEffect.apply），
+     * 悬浮面板经 refreshAppearance 即时更新；其他页面回到前台 onResume 时自动生效。
+     */
+    private fun showWindowEffectDialog() {
+        val labels = if (android.os.Build.VERSION.SDK_INT >= 31) {
+            arrayOf("默认", "亚克力（毛玻璃）", "半透明")
+        } else {
+            // Android 12 以下系统不支持窗口模糊，亚克力会降级为半透明底
+            arrayOf("默认", "亚克力（需 Android 12+，当前为半透明）", "半透明")
+        }
+        val effects = intArrayOf(
+            AppSettings.WINDOW_EFFECT_DEFAULT,
+            AppSettings.WINDOW_EFFECT_ACRYLIC,
+            AppSettings.WINDOW_EFFECT_TRANSLUCENT
+        )
+        MaterialAlertDialogBuilder(this)
+            .setTitle("窗口效果")
+            .setItems(labels) { _, which ->
+                AppSettings.setWindowEffect(this, effects[which])
+                com.clipditto.app.util.WindowEffect.applyVisible(this)
+                ClipboardService.refreshAppearance(this)
+                refreshWindowEffectRow()
+                Toast.makeText(
+                    this,
+                    "窗口效果已切换为${windowEffectLabel(effects[which])}",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            .show()
     }
 
     private fun showThemeDialog() {

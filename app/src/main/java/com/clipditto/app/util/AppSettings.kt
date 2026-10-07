@@ -81,6 +81,25 @@ object AppSettings {
         prefs(context).edit().putInt(KEY_PANEL_ALPHA, percent.coerceIn(30, 100)).apply()
     }
 
+    private const val KEY_WINDOW_EFFECT = "window_effect"
+
+    /** 窗口效果：默认（不透明纯色底） */
+    const val WINDOW_EFFECT_DEFAULT = 0
+
+    /** 窗口效果：亚克力（毛玻璃，Android 12+ 模糊底层内容，低版本降级为半透明） */
+    const val WINDOW_EFFECT_ACRYLIC = 1
+
+    /** 窗口效果：半透明（无模糊，全版本可用） */
+    const val WINDOW_EFFECT_TRANSLUCENT = 2
+
+    /** 全局窗口效果（各页面窗口 + 悬浮面板），默认 WINDOW_EFFECT_DEFAULT */
+    fun getWindowEffect(context: Context): Int =
+        prefs(context).getInt(KEY_WINDOW_EFFECT, WINDOW_EFFECT_DEFAULT)
+
+    fun setWindowEffect(context: Context, effect: Int) {
+        prefs(context).edit().putInt(KEY_WINDOW_EFFECT, effect).apply()
+    }
+
     // ---------------- 外观主题 ----------------
 
     private const val KEY_THEME_MODE = "theme_mode"

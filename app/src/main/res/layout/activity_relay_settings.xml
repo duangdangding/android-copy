@@ -11,11 +11,11 @@
         android:layout_width="match_parent"
         android:layout_height="40dp"
         android:minHeight="0dp"
-        android:background="?attr/colorPrimary"
+        android:background="?attr/effectToolbarBg"
         app:navigationIcon="?attr/homeAsUpIndicator"
-        app:navigationIconTint="?attr/colorOnPrimary"
+        app:navigationIconTint="?attr/effectToolbarFg"
         app:title="云端中继"
-        app:titleTextColor="?attr/colorOnPrimary" />
+        app:titleTextColor="?attr/effectToolbarFg" />
 
     <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"

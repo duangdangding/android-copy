@@ -100,8 +100,12 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("ClickableViewAccessibility")   // 搜索框清除图标用 OnTouchListener 判定点击区域
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 按窗口效果选主题：窗口创建即是对应背景/模糊，避免进入时闪变
+        setTheme(com.clipditto.app.util.WindowEffect.themeRes(this))
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        // 全局窗口效果（默认/亚克力/半透明），设置页切换后 onResume 会重新应用
+        com.clipditto.app.util.WindowEffect.apply(this)
         // 沉浸式：Toolbar 背景延伸到状态栏，底部避开手势导航条
         EdgeToEdge.apply(this, findViewById(R.id.toolbar))
 
@@ -259,6 +263,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 从设置页返回时，窗口效果可能已变更，重新应用
+        com.clipditto.app.util.WindowEffect.apply(this)
         // 主界面打开时收起悬浮列表面板（默认关闭弹窗列表），悬浮球保持显示
         ClipboardService.instance?.dismissPanel()
         refreshListenButton()

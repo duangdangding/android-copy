@@ -13,12 +13,12 @@
         android:layout_width="match_parent"
         android:layout_height="40dp"
         android:minHeight="0dp"
-        android:background="?attr/colorPrimary"
+        android:background="?attr/effectToolbarBg"
         android:theme="@style/ToolbarTheme"
         app:navigationIcon="?attr/homeAsUpIndicator"
-        app:navigationIconTint="?attr/colorOnPrimary"
+        app:navigationIconTint="?attr/effectToolbarFg"
         app:title="设备同步"
-        app:titleTextColor="?attr/colorOnPrimary"
+        app:titleTextColor="?attr/effectToolbarFg"
         app:menu="@menu/menu_devices" />
 
     <androidx.core.widget.NestedScrollView
@@ -48,7 +48,7 @@
                 <ImageView
                     android:layout_width="22dp"
                     android:layout_height="22dp"
-                    android:contentDescription="文件共享"
+                    android:contentDescription="文件局域网传输"
                     android:src="@drawable/ic_share" />
 
                 <LinearLayout
@@ -61,7 +61,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="文件共享"
+                        android:text="文件局域网传输"
                         android:textColor="@color/text_primary"
                         android:textSize="15sp" />
 
@@ -69,7 +69,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:text="局域网免配对互传文件"
+                        android:text="免配对互传文件"
                         android:textColor="@color/text_hint"
                         android:textSize="12sp" />
                 </LinearLayout>
