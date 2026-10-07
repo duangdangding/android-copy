@@ -10,4 +10,13 @@
     <dimen name="main_btn_text_size">14sp</dimen>
     <dimen name="main_btn_min_h">48dp</dimen>
     <dimen name="main_btn_inset_v">4dp</dimen>
+
+    <!-- 设备同步页列表项：平板保持原大小不变 -->
+    <dimen name="device_avatar_size">44dp</dimen>
+    <dimen name="device_avatar_text_size">17sp</dimen>
+    <dimen name="device_avatar_margin_end">12dp</dimen>
+    <dimen name="device_check_margin_start">6dp</dimen>
+    <dimen name="device_check_margin_end">0dp</dimen>
+    <dimen name="device_status_text_size">12sp</dimen>
+    <item name="device_check_scale" type="dimen" format="float">1.0</item>
 </resources>

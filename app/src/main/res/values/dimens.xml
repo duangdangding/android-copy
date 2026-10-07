@@ -10,4 +10,16 @@
     <dimen name="main_btn_text_size">12sp</dimen>
     <dimen name="main_btn_min_h">36dp</dimen>
     <dimen name="main_btn_inset_v">0dp</dimen>
+
+    <!-- 设备同步页列表项：手机上头像、多选框更小，保证状态一行显示 -->
+    <dimen name="device_avatar_size">36dp</dimen>
+    <dimen name="device_avatar_text_size">14sp</dimen>
+    <dimen name="device_avatar_margin_end">10dp</dimen>
+    <dimen name="device_check_margin_start">0dp</dimen>
+    <!-- 负边距回收缩小多选框后右侧残留的空间，让给中间文字 -->
+    <dimen name="device_check_margin_end">-6dp</dimen>
+    <!-- 状态行字号：配合两侧省出的空间，一行内完整显示，不允许省略 -->
+    <dimen name="device_status_text_size">12sp</dimen>
+    <!-- 多选框缩放比例（float 类型的 dimen，fraction 资源在部分 ROM 上解析会崩溃） -->
+    <item name="device_check_scale" type="dimen" format="float">0.8</item>
 </resources>
