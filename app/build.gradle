@@ -44,8 +44,8 @@ android {
         // ===== 版本号：每次发版改这里 =====
         // versionCode：整数，只能递增（1, 2, 3...），系统靠它判断"是不是新版本"
         // versionName：给人看的版本字符串，显示在应用信息里
-        versionCode 31
-        versionName "4.21"
+        versionCode 32
+        versionName "4.22"
     }
 
     // ===== 打包后的 APK 文件名 =====
@@ -110,6 +110,9 @@ dependencies {
 
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
     implementation 'com.google.code.gson:gson:2.11.0'
+
+    // 汉字转拼音：列表搜索支持首拼/全拼匹配（FuzzySearch）
+    implementation 'com.belerweb:pinyin4j:2.5.1'
 
     // 云端中继：WebSocket 长连接（现有网络层是裸 HttpURLConnection，无 WS 能力）
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'

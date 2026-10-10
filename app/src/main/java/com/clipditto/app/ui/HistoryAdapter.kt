@@ -21,6 +21,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.clipditto.app.R
 import com.clipditto.app.data.ClipItem
 import com.clipditto.app.data.ClipType
+import com.clipditto.app.util.FuzzySearch
 import com.clipditto.app.util.Haptics
 import com.clipditto.app.util.MediaFiles
 import com.google.android.material.card.MaterialCardView
@@ -53,7 +54,8 @@ class HistoryAdapter(
 
     /**
      * 搜索命中高亮：与 FuzzySearch 规则一致——
-     * 包含匹配标出所有出现片段；否则按子序列贪心命中逐字标出。
+     * 包含匹配标出所有出现片段；纯字母查询再按拼音（首拼/全拼）命中标出对应汉字；
+     * 最后按子序列贪心命中逐字标出。
      */
     private fun highlightMatches(text: String, view: View): CharSequence {
         val q = highlightQuery.trim().lowercase()
@@ -69,7 +71,28 @@ class HistoryAdapter(
                 any = true
                 from = lower.indexOf(q, from + q.length)
             }
-        } else {
+        } else if (FuzzySearch.isLetterQuery(q) && FuzzySearch.hasHan(lower)) {
+            // 拼音匹配：先首拼（命中首字母串的区间即字符区间），再全拼（字母区间映射回字符区间）
+            val form = FuzzySearch.pinyinFormOf(text)
+            var s = form.initials.indexOf(q)
+            if (s >= 0) {
+                while (s >= 0 && s < text.length) {
+                    for (k in s until minOf(s + q.length, text.length)) hit[k] = true
+                    any = true
+                    s = form.initials.indexOf(q, s + q.length)
+                }
+            } else {
+                var f = form.full.indexOf(q)
+                while (f >= 0) {
+                    form.charSpan(f, f + q.length)?.let { span ->
+                        for (k in span) hit[k] = true
+                        any = true
+                    }
+                    f = form.full.indexOf(q, f + q.length)
+                }
+            }
+        }
+        if (!any) {
             // 子序列匹配：贪心顺序标出命中字符
             var qi = 0
             for (i in lower.indices) {
