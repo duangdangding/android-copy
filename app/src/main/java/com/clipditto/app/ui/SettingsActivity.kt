@@ -166,6 +166,9 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.rowWindowEffect).setOnClickListener {
             showWindowEffectDialog()
         }
+        findViewById<android.view.View>(R.id.rowHighlight).setOnClickListener {
+            showHighlightColorDialog()
+        }
 
         // ---- 跟随系统主题色（Material You 动态取色，仅 Android 12+，重启应用后生效） ----
         if (android.os.Build.VERSION.SDK_INT >= 31) {
@@ -238,6 +241,7 @@ class SettingsActivity : AppCompatActivity() {
         refreshPanelSwitch()
         refreshPanelAlphaRow()
         refreshWindowEffectRow()
+        refreshHighlightRow()
         refreshThemeRow()
         refreshMaxRecordsRow()
         refreshRetentionRow()
@@ -344,6 +348,28 @@ class SettingsActivity : AppCompatActivity() {
     private fun refreshWindowEffectRow() {
         findViewById<TextView>(R.id.tvWindowEffectValue).text =
             windowEffectLabel(AppSettings.getWindowEffect(this))
+    }
+
+    /** 高亮颜色行：文字即当前预设名，并用该颜色着色当作预览 */
+    private fun refreshHighlightRow() {
+        val index = AppSettings.getHighlightColorIndex(this)
+        val tv = findViewById<TextView>(R.id.tvHighlightValue)
+        tv.text = AppSettings.HIGHLIGHT_PRESETS[index].first
+        tv.setTextColor(AppSettings.resolveHighlightColor(this))
+    }
+
+    /** 搜索高亮颜色：预设色板单选，选中即写入；主列表/悬浮面板回到前台时自动用新颜色 */
+    private fun showHighlightColorDialog() {
+        val labels = AppSettings.HIGHLIGHT_PRESETS.map { it.first }.toTypedArray()
+        MaterialAlertDialogBuilder(this)
+            .setTitle("搜索高亮颜色")
+            .setSingleChoiceItems(labels, AppSettings.getHighlightColorIndex(this)) { dialog, which ->
+                AppSettings.setHighlightColorIndex(this, which)
+                refreshHighlightRow()
+                Toast.makeText(this, "高亮颜色已切换为${labels[which]}", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }
+            .show()
     }
 
     private fun windowEffectLabel(effect: Int): String = when (effect) {

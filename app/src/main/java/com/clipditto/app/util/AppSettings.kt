@@ -2,6 +2,8 @@ package com.clipditto.app.util
 
 import android.content.Context
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.content.ContextCompat
+import com.clipditto.app.R
 import com.clipditto.app.service.BootReceiver
 
 /**
@@ -266,6 +268,38 @@ object AppSettings {
     fun setBgScaleH(context: Context, percent: Int) {
         prefs(context).edit().putInt(KEY_BG_SCALE_H, percent.coerceIn(10, 200)).apply()
     }
+
+    // ---------------- 搜索高亮 ----------------
+
+    private const val KEY_HIGHLIGHT_COLOR = "highlight_color"
+
+    /**
+     * 搜索高亮颜色预设：名称 + 颜色资源（语义色，深浅色自适应）。
+     * 0 为默认主题链接色；存预设序号而非色值——颜色资源 id 跨版本不稳定。
+     */
+    val HIGHLIGHT_PRESETS: List<Pair<String, Int>> = listOf(
+        "默认（主题色）" to R.color.accent_link,
+        "琥珀" to R.color.badge_fav,
+        "红色" to R.color.danger,
+        "绿色" to R.color.badge_image,
+        "蓝色" to R.color.badge_file,
+        "橙色" to R.color.badge_video,
+        "青色" to R.color.badge_audio
+    )
+
+    /** 搜索高亮颜色预设序号，默认 0（主题色） */
+    fun getHighlightColorIndex(context: Context): Int =
+        prefs(context).getInt(KEY_HIGHLIGHT_COLOR, 0).coerceIn(HIGHLIGHT_PRESETS.indices)
+
+    fun setHighlightColorIndex(context: Context, index: Int) {
+        prefs(context).edit()
+            .putInt(KEY_HIGHLIGHT_COLOR, index.coerceIn(HIGHLIGHT_PRESETS.indices))
+            .apply()
+    }
+
+    /** 解析当前设置对应的高亮颜色（ARGB） */
+    fun resolveHighlightColor(context: Context): Int =
+        ContextCompat.getColor(context, HIGHLIGHT_PRESETS[getHighlightColorIndex(context)].second)
 
     // ---------------- 存储位置 ----------------
 

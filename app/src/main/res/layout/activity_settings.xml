@@ -316,6 +316,35 @@
                     android:textSize="13sp" />
             </LinearLayout>
 
+            <!-- 搜索高亮颜色：命中字符的标色，预设色板（含默认主题色） -->
+            <LinearLayout
+                android:id="@+id/rowHighlight"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="12dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="搜索高亮颜色"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:id="@+id/tvHighlightValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
             <!-- Android 12+：主题色跟随壁纸（Material You 动态取色），低版本整行隐藏 -->
             <LinearLayout
                 android:id="@+id/rowDynamicColor"

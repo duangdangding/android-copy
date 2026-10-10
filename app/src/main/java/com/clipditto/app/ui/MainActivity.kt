@@ -75,6 +75,8 @@ class MainActivity : AppCompatActivity() {
 
     private var allClips: List<ClipItem> = emptyList()
     private var query: String = ""
+    /** 上次应用的高亮颜色预设序号（设置页改色后 onResume 里对比刷新列表） */
+    private var lastHighlightColorIndex: Int = -1
 
     /** 按搜索词过滤主界面列表（模糊匹配），命中字符在列表里高亮 */
     private fun applyFilter() {
@@ -275,6 +277,12 @@ class MainActivity : AppCompatActivity() {
         )
         // 主界面打开时收起悬浮列表面板（默认关闭弹窗列表），悬浮球保持显示
         ClipboardService.instance?.dismissPanel()
+        // 高亮颜色可能在设置页被修改：DiffUtil 看不到这个外部状态，变化时整表重绑一次
+        val highlightIndex = AppSettings.getHighlightColorIndex(this)
+        if (highlightIndex != lastHighlightColorIndex) {
+            lastHighlightColorIndex = highlightIndex
+            adapter.notifyDataSetChanged()
+        }
         refreshListenButton()
         refreshBallButton()
         refreshStatus()

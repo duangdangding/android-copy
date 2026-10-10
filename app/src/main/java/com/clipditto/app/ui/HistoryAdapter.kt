@@ -21,6 +21,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.clipditto.app.R
 import com.clipditto.app.data.ClipItem
 import com.clipditto.app.data.ClipType
+import com.clipditto.app.util.AppSettings
 import com.clipditto.app.util.FuzzySearch
 import com.clipditto.app.util.Haptics
 import com.clipditto.app.util.MediaFiles
@@ -105,7 +106,8 @@ class HistoryAdapter(
         }
         if (!any) return text
         val spannable = SpannableString(text)
-        val color = ContextCompat.getColor(view.context, R.color.accent_link)
+        // 高亮颜色可在设置页自定义（默认主题链接色）
+        val color = AppSettings.resolveHighlightColor(view.context)
         var i = 0
         while (i < hit.size) {
             if (!hit[i]) { i++; continue }
@@ -118,8 +120,24 @@ class HistoryAdapter(
         return spannable
     }
 
-    /** 差异刷新入口（内部走 DiffUtil，增删/变更有动画，不再全表闪动） */
-    fun submit(list: List<ClipItem>) = submitList(list)
+    /** 上一次提交时的高亮词（DiffUtil 只比较条目内容，高亮词变化本身不会触发重绑） */
+    private var appliedHighlight: String = ""
+
+    /**
+     * 差异刷新入口（内部走 DiffUtil，增删/变更有动画，不再全表闪动）。
+     * 高亮词变化时，内容相同的条目 DiffUtil 不会重绑、高亮画不上去，
+     * 此时在 diff 应用完成后整表重刷一次，让新搜索词的高亮立即生效。
+     */
+    fun submit(list: List<ClipItem>) {
+        val h = highlightQuery.trim()
+        val highlightChanged = h != appliedHighlight
+        appliedHighlight = h
+        if (highlightChanged) {
+            submitList(list) { notifyDataSetChanged() }
+        } else {
+            submitList(list)
+        }
+    }
 
     /** 供滑动操作按位置取条目 */
     fun itemAt(position: Int): ClipItem = getItem(position)
