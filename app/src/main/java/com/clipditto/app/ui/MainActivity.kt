@@ -269,6 +269,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        ClipboardService.instance?.mainForeground = true
         // 从设置页返回时，窗口效果可能已变更，重新应用
         com.clipditto.app.util.WindowEffect.apply(this)
         // 自定义背景可能在设置页被修改（图片/模式/透明度/范围），统一重设
@@ -288,6 +289,18 @@ class MainActivity : AppCompatActivity() {
         refreshStatus()
         refreshStorage()
         refreshShizukuButton()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        ClipboardService.instance?.mainForeground = false
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // 主页拿到窗口焦点时补读一次剪贴板：本应用前台直读，无需 Shizuku / 抢焦点悬浮窗
+        // （无 Shizuku 时后台不监听，复制内容在主页或悬浮面板打开时才入库）
+        if (hasFocus) ClipboardService.instance?.ingestForegroundClipboard()
     }
 
     /** 显示应用 / 数据库占用情况 */

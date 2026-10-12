@@ -39,13 +39,13 @@ The script bumps versionCode, verifies a local build (`-SkipBuild` to skip), com
 
 1. Open the app and tap "开启监听+悬浮球" (start listening + floating bubble); grant the **overlay permission** when prompted.
 2. Tap "开启无障碍粘贴" and enable "共享剪贴-卢" in system accessibility settings — required for tap-to-paste.
-3. (Optional) Authorize Shizuku for completely distraction-free clipboard reading.
-4. Copying anything in any app is recorded automatically; tap the bubble → tap an entry → the content is pasted into the current input field.
+3. (Optional) Authorize Shizuku for real-time clipboard monitoring.
+4. With Shizuku authorized, copying anything in any app is recorded in real time; without Shizuku the app deliberately never touches the clipboard in the background (to avoid focus stealing) — copied content is captured when you open the floating panel or the home page. Tap the bubble → tap an entry → the content is pasted into the current input field.
 
 ## Technical notes & known limitations
 
-- **Android 10+ background clipboard restriction**: background apps may not read the clipboard. The default workaround adds a temporary 1 px transparent, focusable overlay window to grab focus when a change is detected, reads, then removes it immediately — the overlay permission must stay granted.
-- **Shizuku distraction-free reading**: with Shizuku authorized, reads are forwarded to a shell process, never grabbing focus and with no UI side effects (no IME flicker, no biometric interruptions); it falls back to focus-grabbing automatically after repeated failures. Shizuku must be reactivated after every reboot.
+- **Android 10+ background clipboard restriction**: background apps may not read the clipboard. Reading requires window focus (a temporary 1 px transparent, focusable overlay window grabs focus, reads, then is removed), and every focus switch makes the current app hitch briefly. So without Shizuku the app performs no background reads at all and only catches up when the floating panel or home page is opened — the overlay permission must stay granted.
+- **Shizuku distraction-free reading**: with Shizuku authorized, reads are forwarded to a shell process, never grabbing focus and with no UI side effects (no IME flicker, no biometric interruptions); it is also the only channel that monitors the clipboard in real time. It falls back to focus-grabbing automatically after repeated failures. Shizuku must be reactivated after every reboot.
 - **Text pasting**: content is written to the system clipboard first, then the accessibility service performs `ACTION_PASTE` on the focused editable node. Without accessibility it degrades to "copied — long-press to paste manually".
 - **Media pasting**: files in the private directory are exposed as URIs via `FileProvider` on the system clipboard; whether the target app accepts the paste is up to that app.
 - **Screenshots / screen recordings**: these are image/video files at the system level — copying them (or copying in a file manager) stores them as media entries.

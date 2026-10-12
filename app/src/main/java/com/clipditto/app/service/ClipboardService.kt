@@ -115,10 +115,9 @@ class ClipboardService : Service() {
     private var lastPollAt = 0L
 
     /**
-     * 系统剪贴板变化回调是否送达过。部分 ROM（如 HyperOS）不下发回调，
-     * 才需要无障碍事件驱动的轮询兜底；回调可用的 ROM 上弱信号轮询纯属多余——
-     * 每次窗口切换（返回手势、切 App）都排一次抢焦点读取，焦点悬浮窗的
-     * 添加/移除会打断进行中的手势，表现为边缘滑动卡顿
+     * 系统剪贴板变化回调是否送达过（仅作日志诊断用）。
+     * 部分 ROM（如 HyperOS）对后台监听不下发回调；回调是否可用不再影响读取策略——
+     * 无 Shizuku 时统一等面板/主页打开再补读
      */
     @Volatile
     private var systemCallbackSeen = false
@@ -128,27 +127,25 @@ class ClipboardService : Service() {
     private var lastPollFoundNew = false
 
     /**
+     * 主页是否在前台。此时本应用持有窗口焦点，读剪贴板无需 1px 悬浮窗抢焦点；
+     * 也作为"界面打开中，允许读取"的判定之一
+     */
+    @Volatile
+    var mainForeground = false
+
+    /**
      * 无障碍服务检测到可能的复制行为时回调。
-     * 部分 ROM（如 HyperOS）不下发系统剪贴板变化回调，只能靠事件驱动轮询兜底。
      *
-     * 注意：事件驱动的每次读取都要添加/移除一次抢焦点的 1px 悬浮窗，
-     * 在点击/滑动/窗口切换途中触发会打断手势、造成卡顿，所以触发条件刻意收紧：
-     * - 系统回调可用的 ROM（[systemCallbackSeen]）：复制由 clipListener 权威捕获，
-     *   本函数全部跳过，不做任何事件驱动轮询
-     * - [CopySignal.ACTION]（点复制项/复制 Toast）：要求刚出现过文字选区才读取——
-     *   "非可编辑点击"绝大多数是普通按钮、Toast 也大多与复制无关，不能见点就抢焦点
-     * - [CopySignal.SELECTION]（选中文字）：剪贴板尚未写入，且操作菜单正在显示，
-     *   立即抢焦点会闪屏——推迟到选区稳定后合并读取
-     * - [CopySignal.WEAK_WINDOW]（窗口切换/弹窗）：返回手势/切 App 也是窗口切换，
-     *   高频且几乎与复制无关——做 1.2s 防抖，界面稳定后才读一次
+     * 2026-10-12 起：无 Shizuku 时不再做任何事件驱动读取——每次读取都要
+     * 添加/移除一次抢焦点的 1px 悬浮窗，复制/滑动/窗口切换途中触发都会卡屏。
+     * 剪贴板内容留在系统里，等悬浮面板或主页打开时统一补读。
+     * 只有 Shizuku 通道（shell 身份读取，无界面副作用）才实时兜底轮询。
      */
     private fun onPossibleClipboardCopy(signal: CopySignal) {
         if (!isMonitorEnabled()) {
             dirtyWhilePaused = true
             return
         }
-        // 系统回调可用：复制事件由 clipListener 捕获，事件驱动轮询纯属多余且伤手势
-        if (systemCallbackSeen) return
         // Shizuku 通道：读剪贴板不抢窗口焦点，输入法/选区/系统弹窗全部无需避让，
         // 直接延迟读取兜底（复制事件先于剪贴板写入）
         if (ShizukuClipboard.isChannelActive()) {
@@ -159,103 +156,8 @@ class ClipboardService : Service() {
                 pollClipboard()
                 handler.postDelayed({ if (!lastPollFoundNew) pollClipboard() }, 900)
             }, 300)
-            return
         }
-        when (signal) {
-            CopySignal.SELECTION -> {
-                scheduleSettledPoll()
-                return
-            }
-            CopySignal.WEAK_WINDOW -> {
-                // 防抖：连续窗口切换（导航手势进行中）不断重置计时，
-                // 只有界面稳定 1.2s 后才读一次；复制菜单弹出/关闭引起的变化照样能捕获
-                scheduleWeakWindowPoll()
-                return
-            }
-            CopySignal.ACTION -> {
-                // 刚出现过文字选区（选中→点"复制"菜单）才像真正的复制；
-                // 无选区上下文的点击/Toast 直接忽略，交给弱信号防抖兜底
-                if (!PasteAccessibilityService.selectionRecently()) return
-                // 键盘正在弹出动画 / 系统弹窗（生物识别、应用锁）显示中：
-                // 推迟读取，避免打断（内容不会丢，稍后补读）
-                if (PasteAccessibilityService.imeAnimatingIn() ||
-                    PasteAccessibilityService.systemDialogRecently()
-                ) {
-                    scheduleSettledPoll()
-                    return
-                }
-            }
-        }
-        val now = SystemClock.uptimeMillis()
-        if (now - lastPollAt < 350) return // 节流：350ms 内最多触发一轮
-        lastPollAt = now
-        // 无 Shizuku 时每次读取都要添加/移除一次 1px 焦点悬浮窗，会干扰输入法等其他操作，
-        // 因此每次复制事件只读一次（捕获一条），不做第二次补读刷新；
-        // 没读到就放弃这条，等下一次复制事件。
-        // 延迟执行时再次检查：400ms 内键盘/系统弹窗可能刚弹出（对话框先弹、焦点后到）
-        handler.postDelayed({
-            if (PasteAccessibilityService.imeAnimatingIn() ||
-                PasteAccessibilityService.systemDialogRecently()
-            ) {
-                scheduleSettledPoll()
-                return@postDelayed
-            }
-            pollClipboard()
-        }, 400)
-    }
-
-    /** 窗口切换弱信号的防抖任务 */
-    private var weakWindowPollRunnable: Runnable? = null
-
-    /**
-     * 窗口切换防抖读取：每次窗口变化重置计时，1.2s 无新变化（界面稳定）才读一次。
-     * 导航手势/连续切 App 期间永不触发读取；复制菜单弹出又关闭引起的
-     * 窗口变化，在稳定后这一轮读取里照样能捕获内容。
-     */
-    private fun scheduleWeakWindowPoll() {
-        weakWindowPollRunnable?.let { handler.removeCallbacks(it) }
-        val r = Runnable {
-            weakWindowPollRunnable = null
-            if (PasteAccessibilityService.imeAnimatingIn() ||
-                PasteAccessibilityService.imeVisible() ||
-                PasteAccessibilityService.systemDialogRecently()
-            ) {
-                Log.d(TAG, "输入法/系统弹窗激活中，跳过弱信号防抖读取")
-                return@Runnable
-            }
-            if (PasteAccessibilityService.selectionRecently()) {
-                scheduleSettledPoll()
-                return@Runnable
-            }
-            pollClipboard()
-        }
-        weakWindowPollRunnable = r
-        handler.postDelayed(r, 1_200)
-    }
-
-    /** 选区稳定后的合并读取：是否已排队 */
-    @Volatile
-    private var settledPollPending = false
-
-    /**
-     * 选区活跃/键盘弹出/系统弹窗（生物识别、应用锁）期间不抢焦点，
-     * 等稳定后合并读一次。到点时条件仍不满足则继续顺延。
-     * 键盘稳定打开（非动画中）不阻止读取——聊天 App 里键盘常驻时复制也要能捕获。
-     */
-    private fun scheduleSettledPoll() {
-        if (settledPollPending) return
-        settledPollPending = true
-        handler.postDelayed({
-            settledPollPending = false
-            if (PasteAccessibilityService.selectionRecently() ||
-                PasteAccessibilityService.imeAnimatingIn() ||
-                PasteAccessibilityService.systemDialogRecently()
-            ) {
-                scheduleSettledPoll() // 条件仍不满足，继续顺延
-                return@postDelayed
-            }
-            pollClipboard()
-        }, 2_100)
+        // 无 Shizuku：直接忽略信号，不读取（见函数头注释）
     }
 
     /** 读一次剪贴板，签名变了才走入库流程 */
@@ -304,7 +206,30 @@ class ClipboardService : Service() {
             Log.d(TAG, "监听已暂停，标记脏数据")
             return@OnPrimaryClipChangedListener
         }
+        // 无 Shizuku 时后台不做任何读取（每次都要抢一次窗口焦点，卡屏）：
+        // 只有悬浮面板打开中 / 主页前台时才实时读取；其余情况内容留在系统
+        // 剪贴板里，等面板或主页打开时统一补读。Shizuku 通道不受此限
+        if (!ShizukuClipboard.isChannelActive() &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            panelView == null && !mainForeground
+        ) {
+            Log.d(TAG, "界面未打开且无 Shizuku，暂不读取，待打开时补读")
+            return@OnPrimaryClipChangedListener
+        }
         readClipboardSafely()
+    }
+
+    /**
+     * 主页获得窗口焦点时补读一次剪贴板（本应用前台直读，无界面副作用）。
+     * 无 Shizuku 时后台不监听，复制的内容在主页/面板打开时才入库
+     */
+    fun ingestForegroundClipboard() {
+        if (!isMonitorEnabled()) return
+        val clip = clipboard.primaryClip ?: return
+        val sig = sigOf(clip)
+        if (sig == null || sig == lastHandledSig) return
+        Log.d(TAG, "主页前台补读：发现新内容，入库")
+        handleClip(clip)
     }
 
     override fun onCreate() {
@@ -409,6 +334,11 @@ class ClipboardService : Service() {
                 onRead(clip)
                 return
             }
+        }
+        // 主页在前台：本应用持有窗口焦点，可直接读取，无需 1px 悬浮窗抢焦点
+        if (mainForeground) {
+            onRead(clipboard.primaryClip)
+            return
         }
         // Android 10 以下可直接读取；10+ 需要窗口焦点，用 1px 不可见聚焦悬浮窗取巧
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
@@ -936,7 +866,8 @@ class ClipboardService : Service() {
                 .setInterpolator(android.view.animation.OvershootInterpolator(1.1f))
                 .start()
         }
-        // 面板打开后主动读一次剪贴板（走 1px 聚焦悬浮窗），把监听可能漏掉的内容补进来；
+        // 面板打开后主动读一次剪贴板（无 Shizuku 时走 1px 聚焦悬浮窗）：
+        // 这是无 Shizuku 下的主要捕获入口——后台不再监听，复制的内容在打开面板时入库；
         // 暂停监听时不读取；暂停期间复制过内容则把当前剪贴板设为基线，不补录
         handler.postDelayed({
             if (panelView != null && isMonitorEnabled()) {

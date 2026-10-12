@@ -239,6 +239,30 @@ object CustomBackground {
         }
     }
 
+    /**
+     * 去掉背景 Drawable 固有尺寸约束的包装：BitmapDrawable 的固有宽高会被 View
+     * 当成建议最小宽高，大图（如 2048px）会把 wrap_content 的悬浮面板撑到近全屏，
+     * 导致无法拖动、无法调整大小。包装后最小尺寸返回 0，绘制行为完全不变。
+     */
+    private class MinSizeFreeDrawable(private val inner: Drawable) : Drawable() {
+        override fun draw(canvas: android.graphics.Canvas) = inner.draw(canvas)
+        override fun setAlpha(alpha: Int) { inner.alpha = alpha }
+        override fun getAlpha(): Int = inner.alpha
+        override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {
+            inner.colorFilter = colorFilter
+        }
+        @Deprecated("Deprecated in Java")
+        override fun getOpacity(): Int = inner.opacity
+        override fun getMinimumWidth(): Int = 0
+        override fun getMinimumHeight(): Int = 0
+        override fun getIntrinsicWidth(): Int = -1
+        override fun getIntrinsicHeight(): Int = -1
+        override fun onBoundsChange(bounds: android.graphics.Rect) { inner.bounds = bounds }
+        override fun setState(stateSet: IntArray): Boolean = inner.setState(stateSet)
+        override fun getState(): IntArray = inner.state
+        override fun isStateful(): Boolean = inner.isStateful
+    }
+
     // ---------------- 悬浮面板 ----------------
 
     /**
@@ -261,7 +285,7 @@ object CustomBackground {
             }
         }
         view.clipToOutline = true
-        view.background = bg
+        view.background = MinSizeFreeDrawable(bg)
         return true
     }
 }

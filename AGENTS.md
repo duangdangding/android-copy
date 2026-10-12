@@ -45,8 +45,8 @@
 
 ## 关键机制与坑（改动前必读）
 
-- **Android 10+ 后台剪贴板限制**：系统禁止后台 App 读剪贴板。现行方案：检测到变化时临时加 1px 透明悬浮窗抢焦点读取，读完立即移除；另有 Shizuku 通道（`ShizukuClipboard` / `ClipboardShellService`）。不要"简化"掉这段逻辑。
-- **事件驱动轮询的触发条件刻意收紧（2026-10 卡顿排查结论，勿放宽）**：每次事件驱动读取都要添加/移除一次抢焦点的 1px 悬浮窗，在点击/滑动/窗口切换途中触发会打断手势导航、造成系统卡顿。现行约束（`ClipboardService.onPossibleClipboardCopy`）：① 系统剪贴板回调可用的 ROM（`systemCallbackSeen`，需**其他 App 写入**触发过一次回调才算，自身写入不算）事件轮询全关；② `ACTION` 信号（点击/Toast）必须有近期文字选区才响应——"非可编辑点击"绝大多数是普通按钮；③ `WEAK_WINDOW`（窗口切换）做 1.2s 防抖，连续导航期间不读取。这些信号只是无回调 ROM（HyperOS 等）的兜底。
+- **Android 10+ 后台剪贴板限制**：系统禁止后台 App 读剪贴板。读取必须有窗口焦点，取巧方案是临时加 1px 透明悬浮窗抢焦点读取，读完立即移除（`ClipboardService.readClipboardSafely`）；另有 Shizuku 通道（`ShizukuClipboard` / `ClipboardShellService`）以 shell 身份直读。不要"简化"掉这段逻辑。
+- **无 Shizuku 时后台完全不读剪贴板（2026-10-12 产品决策，勿改回）**：每次读取 = 添加/移除一次抢焦点的 1px 悬浮窗 = 一次真实的窗口焦点切换，无论触发条件收多紧，复制/滑动途中触发都会卡屏。现行策略：面板和主页都未打开时不做任何读取（`clipListener` 直接跳过、无障碍信号全部忽略），内容留在系统剪贴板里，等**打开悬浮面板**（`showPanel` 延迟 300ms 读一次）或**主页前台**（`MainActivity.onWindowFocusChanged` → `ingestForegroundClipboard`，前台直读不抢焦点）时补读入库。只有 Shizuku 通道保持实时监听（无障碍信号仅给 Shizuku 兜底轮询用）。
 - **无障碍服务的 IPC 开销**：`TYPE_VIEW_TEXT_SELECTION_CHANGED` 在打字时每个按键都触发（光标移动、选区折叠），此时**不得** `obtain` 事件节点（一趟跨进程 IPC），直接按 `fromIndex == toIndex` 跳过；输入框追踪由聚焦/点击事件负责。
 - **悬浮球没有闲置收缩功能**（已移除）：贴边收缩会压住手势导航的边缘返回触发区（视图 scale 只改视觉不改触摸热区）。减少遮挡请引导用户调设置里的小/透明度，不要加回自动贴边/缩窄类逻辑。
 - **文字粘贴链路**：先写系统剪贴板 → 无障碍服务对聚焦的可编辑节点 `ACTION_PASTE`；无障碍未开启时降级为"复制到剪贴板手动粘贴"。
