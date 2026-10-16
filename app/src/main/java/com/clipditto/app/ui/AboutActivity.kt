@@ -17,6 +17,7 @@ import com.clipditto.app.BuildConfig
 import com.clipditto.app.R
 import com.clipditto.app.util.EdgeToEdge
 import com.clipditto.app.util.UpdateChecker
+import com.clipditto.app.util.checkAppLock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -65,6 +66,8 @@ class AboutActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 已加锁时跳解锁页并结束本页
+        if (checkAppLock()) return
         // 从设置页返回时，窗口效果可能已变更，重新应用
         com.clipditto.app.util.WindowEffect.apply(this)
         // 从「安装未知应用」授权页返回：已授权则自动继续安装更新包

@@ -13,6 +13,7 @@ import com.clipditto.app.R
 import com.clipditto.app.service.ClipboardService
 import com.clipditto.app.util.AppSettings
 import com.clipditto.app.util.CustomBackground
+import com.clipditto.app.util.checkAppLock
 
 /**
  * 背景预览页：选择图片后进入，全屏实时预览背景效果。
@@ -39,6 +40,12 @@ class BgPreviewActivity : AppCompatActivity() {
     private lateinit var regionLayer: View
     private lateinit var regionView: BgRegionView
     private lateinit var btnRotate: Button
+
+    override fun onResume() {
+        super.onResume()
+        // 已加锁时跳解锁页并结束本页（先检查再执行 onCreate 的初始化逻辑）
+        checkAppLock()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

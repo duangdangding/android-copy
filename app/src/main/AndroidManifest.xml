@@ -85,6 +85,11 @@
             android:name=".ui.AboutActivity"
             android:exported="false" />
 
+        <!-- 解锁页：应用加锁后的统一解锁入口 -->
+        <activity
+            android:name=".ui.LockScreenActivity"
+            android:exported="false" />
+
         <!-- 设置页（悬浮球 / 面板 / 主题 / 记录规则 / 存储位置） -->
         <activity
             android:name=".ui.SettingsActivity"

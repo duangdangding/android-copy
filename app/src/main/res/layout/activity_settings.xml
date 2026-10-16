@@ -598,6 +598,100 @@
                 style="@style/SettingsSectionHint"
                 android:text="超出规则后自动清理最旧的非收藏记录，收藏记录始终保留" />
 
+            <!-- 应用加锁 -->
+            <TextView
+                style="@style/SettingsSectionTitle"
+                android:drawableStart="@drawable/ic_sec_rule"
+                android:text="应用加锁" />
+
+            <LinearLayout
+                android:id="@+id/rowLockPassword"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="12dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="设置密码"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:id="@+id/tvLockPasswordValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/rowAutoLock"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="12dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="自动加锁时间"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:id="@+id/tvAutoLockValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/rowManualLock"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="12dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="立即加锁"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:id="@+id/tvManualLockValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <TextView
+                style="@style/SettingsSectionHint"
+                android:text="设置密码后，所有页面进入时都需先解锁；忘记密码可重置清空" />
+
             <!-- 存储位置 -->
             <TextView
                 style="@style/SettingsSectionTitle"

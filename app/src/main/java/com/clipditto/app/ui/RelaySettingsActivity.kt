@@ -13,6 +13,7 @@ import androidx.lifecycle.lifecycleScope
 import com.clipditto.app.R
 import com.clipditto.app.util.EdgeToEdge
 import com.clipditto.app.sync.relay.RelaySettings
+import com.clipditto.app.util.checkAppLock
 import com.clipditto.app.sync.relay.RelaySyncManager
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -135,6 +136,8 @@ class RelaySettingsActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 已加锁时跳解锁页并结束本页
+        if (checkAppLock()) return
         // 从设置页返回时，窗口效果可能已变更，重新应用
         com.clipditto.app.util.WindowEffect.apply(this)
     }

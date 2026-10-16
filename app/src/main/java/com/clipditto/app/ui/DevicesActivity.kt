@@ -18,6 +18,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.clipditto.app.R
 import com.clipditto.app.util.EdgeToEdge
+import com.clipditto.app.util.checkAppLock
 import com.clipditto.app.data.ClipRepository
 import com.clipditto.app.sync.LanDevice
 import com.clipditto.app.sync.LanSyncManager
@@ -261,6 +262,8 @@ class DevicesActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 已加锁时跳解锁页并结束本页
+        if (checkAppLock()) return
         // 从设置页返回时，窗口效果可能已变更，重新应用
         com.clipditto.app.util.WindowEffect.apply(this)
         LanSyncManager.discoveryScreenActive = true

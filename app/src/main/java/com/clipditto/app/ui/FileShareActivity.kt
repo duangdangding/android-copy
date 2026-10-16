@@ -27,6 +27,7 @@ import androidx.core.content.FileProvider
 import androidx.core.widget.addTextChangedListener
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import com.clipditto.app.util.checkAppLock
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -179,6 +180,8 @@ class FileShareActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 已加锁时跳解锁页并结束本页
+        if (checkAppLock()) return
         // 从设置页返回时，窗口效果可能已变更，重新应用
         com.clipditto.app.util.WindowEffect.apply(this)
         // 注册前台确认弹窗：本页可见时来文件直接弹窗，不走通知

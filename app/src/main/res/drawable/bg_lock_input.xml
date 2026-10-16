@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 解锁页密码输入框背景：全圆角 + 浅灰填充 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/item_bg" />
+    <corners android:radius="24dp" />
+</shape>

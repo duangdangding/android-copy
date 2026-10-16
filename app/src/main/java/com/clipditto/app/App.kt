@@ -29,6 +29,8 @@ class App : Application() {
         runCatching { com.clipditto.app.sync.relay.RelaySyncManager.init(this) }
         // 文件共享：按开关状态恢复接收服务/在线广播
         runCatching { com.clipditto.app.share.FileShareManager.init(this) }
+        // 应用加锁：全局生命周期拦截 + 自动加锁计时
+        runCatching { com.clipditto.app.util.AppLockManager.register(this) }
         // 追踪当前前台页面：配对请求等全局确认框要弹在用户正在看的页面上
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityResumed(activity: Activity) {

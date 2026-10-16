@@ -24,6 +24,7 @@ import com.clipditto.app.backup.ConfigManager
 import com.clipditto.app.data.ClipRepository
 import com.clipditto.app.service.ClipboardService
 import com.clipditto.app.util.AppSettings
+import com.clipditto.app.util.checkAppLock
 import com.clipditto.app.util.CustomBackground
 import com.google.android.material.appbar.MaterialToolbar
 import kotlinx.coroutines.launch
@@ -221,6 +222,14 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<android.view.View>(R.id.rowBgTarget).setOnClickListener { showBgTargetDialog() }
 
+        // ---- 应用加锁 ----
+        findViewById<android.view.View>(R.id.rowLockPassword).setOnClickListener {
+            if (com.clipditto.app.util.AppLockManager.isEnabled(this)) showChangePasswordDialog()
+            else showSetPasswordDialog()
+        }
+        findViewById<android.view.View>(R.id.rowAutoLock).setOnClickListener { showAutoLockDialog() }
+        findViewById<android.view.View>(R.id.rowManualLock).setOnClickListener { onManualLockClick() }
+
         // ---- 存储位置 ----
         findViewById<android.view.View>(R.id.rowBackupDir).setOnClickListener { showBackupDirDialog() }
         findViewById<Button>(R.id.btnExportConfig).setOnClickListener { onExportConfigClick() }
@@ -231,6 +240,8 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 已加锁时跳解锁页并结束本页
+        if (checkAppLock()) return
         // 导入配置等路径可能改动窗口效果，回到本页时统一重新应用
         com.clipditto.app.util.WindowEffect.apply(this)
         refreshBallSwitch()
@@ -247,6 +258,157 @@ class SettingsActivity : AppCompatActivity() {
         refreshRetentionRow()
         refreshBgRows()
         refreshBackupDirRow()
+        refreshLockRows()
+    }
+
+    // ---------------- 应用加锁 ----------------
+
+    private fun refreshLockRows() {
+        val enabled = com.clipditto.app.util.AppLockManager.isEnabled(this)
+        findViewById<TextView>(R.id.tvLockPasswordValue).text =
+            if (enabled) "已设置（点击修改）" else "未设置"
+        val minutes = com.clipditto.app.util.AppLockManager.getAutoLockMinutes(this)
+        findViewById<TextView>(R.id.tvAutoLockValue).text =
+            if (minutes == 0) "关闭" else "$minutes 分钟"
+        findViewById<TextView>(R.id.tvManualLockValue).text =
+            if (enabled) "" else "需先设置密码"
+    }
+
+    /** 设置新密码：两个输入框（新密码 + 确认） */
+    private fun showSetPasswordDialog() {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val pad = (24 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad / 2, pad, 0)
+        }
+        val etNew = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            hint = "输入密码（至少 4 位）"
+        }
+        val etConfirm = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            hint = "再次输入确认"
+        }
+        container.addView(etNew)
+        container.addView(etConfirm)
+        MaterialAlertDialogBuilder(this)
+            .setTitle("设置加锁密码")
+            .setView(container)
+            .setPositiveButton("确定") { _, _ ->
+                val pw = etNew.text.toString()
+                val cf = etConfirm.text.toString()
+                when {
+                    pw.length < 4 ->
+                        Toast.makeText(this, "密码至少 4 位", Toast.LENGTH_SHORT).show()
+                    pw != cf ->
+                        Toast.makeText(this, "两次输入不一致，请重试", Toast.LENGTH_SHORT).show()
+                    else -> {
+                        com.clipditto.app.util.AppLockManager.setPassword(this, pw)
+                        com.clipditto.app.util.AppLockManager.onUnlocked()
+                        refreshLockRows()
+                        Toast.makeText(this, "密码已设置，应用已加锁", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /** 修改密码：先验证旧密码 */
+    private fun showChangePasswordDialog() {
+        val items = arrayOf("修改密码", "清除密码（关闭加锁）")
+        MaterialAlertDialogBuilder(this)
+            .setTitle("加锁密码")
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> showChangePasswordInputDialog()
+                    1 -> showClearPasswordDialog()
+                }
+            }
+            .show()
+    }
+
+    private fun showChangePasswordInputDialog() {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val pad = (24 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad / 2, pad, 0)
+        }
+        val etOld = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            hint = "当前密码"
+        }
+        val etNew = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            hint = "新密码（至少 4 位）"
+        }
+        container.addView(etOld)
+        container.addView(etNew)
+        MaterialAlertDialogBuilder(this)
+            .setTitle("修改密码")
+            .setView(container)
+            .setPositiveButton("确定") { _, _ ->
+                val old = etOld.text.toString()
+                val new = etNew.text.toString()
+                if (new.length < 4) {
+                    Toast.makeText(this, "新密码至少 4 位", Toast.LENGTH_SHORT).show()
+                } else if (com.clipditto.app.util.AppLockManager.changePassword(this, old, new)) {
+                    Toast.makeText(this, "密码已修改", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "当前密码错误", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun showClearPasswordDialog() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("清除密码")
+            .setMessage("清除后应用将不再加锁，确定继续？")
+            .setPositiveButton("清除") { _, _ ->
+                com.clipditto.app.util.AppLockManager.reset(this)
+                refreshLockRows()
+                Toast.makeText(this, "密码已清除，加锁已关闭", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    /** 自动加锁时间：从后台回到前台超过该时长自动锁定 */
+    private fun showAutoLockDialog() {
+        val options = com.clipditto.app.util.AppLockManager.AUTO_LOCK_OPTIONS
+        val labels = options.map { if (it == 0) "关闭" else "$it 分钟" }.toTypedArray()
+        val current = com.clipditto.app.util.AppLockManager.getAutoLockMinutes(this)
+        val checked = options.indexOf(current).coerceAtLeast(0)
+        MaterialAlertDialogBuilder(this)
+            .setTitle("自动加锁时间\n应用退到后台超过该时长后，回到前台需重新解锁")
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                com.clipditto.app.util.AppLockManager.setAutoLockMinutes(this, options[which])
+                refreshLockRows()
+                Toast.makeText(
+                    this,
+                    if (options[which] == 0) "已关闭自动加锁" else "超过 ${options[which]} 分钟未使用将自动加锁",
+                    Toast.LENGTH_SHORT
+                ).show()
+                dialog.dismiss()
+            }
+            .show()
+    }
+
+    /** 手动加锁：立即进入锁定状态，下次进入任何页面需解锁 */
+    private fun onManualLockClick() {
+        if (!com.clipditto.app.util.AppLockManager.isEnabled(this)) {
+            Toast.makeText(this, "请先设置加锁密码", Toast.LENGTH_SHORT).show()
+            return
+        }
+        com.clipditto.app.util.AppLockManager.lock()
+        Toast.makeText(this, "已加锁，返回主页需解锁", Toast.LENGTH_SHORT).show()
+        finish()
     }
 
     // ---------------- 悬浮球 / 面板 ----------------

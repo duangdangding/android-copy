@@ -46,6 +46,7 @@ import com.clipditto.app.service.ClipboardService
 import com.clipditto.app.service.PasteAccessibilityService
 import com.clipditto.app.service.ShizukuClipboard
 import com.clipditto.app.util.FuzzySearch
+import com.clipditto.app.util.checkAppLock
 import com.clipditto.app.util.AppSettings
 import com.clipditto.app.util.MediaFiles
 import com.clipditto.app.util.StorageStats
@@ -269,6 +270,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 已加锁时跳解锁页并结束本页
+        if (checkAppLock()) return
         ClipboardService.instance?.mainForeground = true
         // 从设置页返回时，窗口效果可能已变更，重新应用
         com.clipditto.app.util.WindowEffect.apply(this)
