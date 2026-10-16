@@ -570,7 +570,14 @@ class ClipboardService : Service() {
                     // 松手回弹：带过冲的缩放恢复
                     view.animate().scaleX(1f).scaleY(1f).setDuration(200)
                         .setInterpolator(OvershootInterpolator()).start()
-                    if (!moved && ballView != null) togglePanel()
+                    if (!moved && ballView != null) {
+                        // 已加锁时先跳解锁页（解锁成功后直接展开面板），不直接展开
+                        if (com.clipditto.app.util.AppLockManager.isLocked(this)) {
+                            com.clipditto.app.ui.LockScreenActivity.startUnlockForPanel(this)
+                        } else {
+                            togglePanel()
+                        }
+                    }
                     true
                 }
                 MotionEvent.ACTION_CANCEL -> {
@@ -1006,6 +1013,11 @@ class ClipboardService : Service() {
         }
     }
 
+    /** 解锁页解锁成功后调起：展开悬浮面板（延迟一点等解锁页 finish 后再展示） */
+    fun showPanelFromUnlock() {
+        handler.postDelayed({ showPanel() }, 300)
+    }
+
     /** 外部请求收起面板（如主界面打开时）；服务与界面同进程且都在主线程，直接移除悬浮窗 */
     fun dismissPanel() {
         if (panelView != null) hidePanel()
@@ -1014,6 +1026,12 @@ class ClipboardService : Service() {
     // ---------------- 点击记录 -> 粘贴 ----------------
 
     private fun onItemPicked(item: ClipItem) {
+        // 已加锁时禁止粘贴/复制到剪贴板，先解锁（解锁成功后直接展开面板）
+        if (com.clipditto.app.util.AppLockManager.isLocked(this)) {
+            hidePanel()
+            com.clipditto.app.ui.LockScreenActivity.startUnlockForPanel(this)
+            return
+        }
         when (item.type) {
             ClipType.TEXT -> pasteText(item.text ?: return)
             else -> copyMediaToClipboard(item)

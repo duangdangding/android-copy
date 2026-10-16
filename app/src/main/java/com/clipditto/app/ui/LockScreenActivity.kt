@@ -1,5 +1,6 @@
 package com.clipditto.app.ui
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -21,9 +22,27 @@ import com.clipditto.app.util.AppLockManager
 class LockScreenActivity : AppCompatActivity() {
 
     companion object {
-        /** 从其他页面启动解锁 */
+        private const val EXTRA_SHOW_PANEL = "show_panel_after_unlock"
+
+        private fun buildIntent(context: Context, showPanel: Boolean): Intent {
+            val intent = Intent(context, LockScreenActivity::class.java)
+            if (context !is Activity) {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (showPanel) {
+                intent.putExtra(EXTRA_SHOW_PANEL, true)
+            }
+            return intent
+        }
+
+        /** 从 Activity 页面启动解锁；解锁成功后回主页 */
         fun startUnlock(context: Context) {
-            context.startActivity(Intent(context, LockScreenActivity::class.java))
+            context.startActivity(buildIntent(context, showPanel = false))
+        }
+
+        /** 从悬浮窗启动解锁；解锁成功后直接展开悬浮面板，不打开主页 */
+        fun startUnlockForPanel(context: Context) {
+            context.startActivity(buildIntent(context, showPanel = true))
         }
     }
 
@@ -46,12 +65,19 @@ class LockScreenActivity : AppCompatActivity() {
         etPassword.setOnClickListener { showKeyboard(etPassword) }
         showKeyboard(etPassword)
 
+        val showPanelAfterUnlock = intent.getBooleanExtra(EXTRA_SHOW_PANEL, false)
+
         btnUnlock.setOnClickListener {
             val input = etPassword.text.toString()
             if (AppLockManager.verify(this, input)) {
                 AppLockManager.onUnlocked()
-                // 解锁后回到主页（避免按返回键回到已 finish 的上一页）
-                startActivity(Intent(this, MainActivity::class.java))
+                if (showPanelAfterUnlock) {
+                    // 从悬浮窗进来：解锁后直接展开悬浮面板，不打开主页
+                    com.clipditto.app.service.ClipboardService.instance?.showPanelFromUnlock()
+                } else {
+                    // 从主页/设置页进来：解锁后回主页（避免按返回键回到已 finish 的上一页）
+                    startActivity(Intent(this, MainActivity::class.java))
+                }
                 finish()
             } else {
                 etPassword.setText("")
