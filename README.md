@@ -1,5 +1,13 @@
 # 共享剪贴-卢（ClipDitto）
 
+> ## ⚠️ 开源声明
+>
+> **本软件为个人开源软件，永久免费使用，源码全部公开。**
+>
+> **如果你在任何渠道付费购买了本软件，请直接申请退款。**
+>
+> 觉得好用的话，欢迎来 [GitHub 仓库](https://github.com/duangdangding/android-copy) 点一个 ⭐ Star 支持一下！
+
 仿 Windows 软件 Ditto 的安卓本地剪贴板记录工具：悬浮球 + 剪贴板自动记录 + 无障碍点击粘贴 + 局域网/云端中继多设备同步 + 局域网文件互传。
 
 PC 端姊妹项目：[pc-lscopy（copy-pc）](https://github.com/duangdangding/pc-lscopy)，可与本 App 互相同步、互传文件。

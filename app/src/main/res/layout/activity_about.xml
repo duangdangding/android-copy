@@ -59,6 +59,48 @@
             android:textSize="12sp" />
     </LinearLayout>
 
+    <!-- 开源声明：醒目卡片，强调个人开源、免费，引导 Star -->
+    <com.google.android.material.card.MaterialCardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="16dp"
+        app:cardBackgroundColor="@color/md_primary_container"
+        app:cardCornerRadius="12dp"
+        app:cardElevation="0dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="开源声明"
+                android:textColor="@color/md_on_primary_container"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:lineSpacingMultiplier="1.3"
+                android:text="本软件为个人开源软件，永久免费使用，源码全部公开。如果你在任何渠道付费购买了本软件，请直接申请退款。"
+                android:textColor="@color/md_on_primary_container"
+                android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/btnStar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="⭐ 觉得好用？去 GitHub 点个 Star 支持一下" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"

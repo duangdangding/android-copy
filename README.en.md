@@ -1,5 +1,13 @@
 # ClipDitto (共享剪贴-卢)
 
+> ## ⚠️ Open-Source Notice
+>
+> **This is a personal open-source project, free forever, with all source code public.**
+>
+> **If you paid for this software through any channel, please request a refund immediately.**
+>
+> If you find it useful, please give it a ⭐ Star on the [GitHub repository](https://github.com/duangdangding/android-copy)!
+
 An Android local clipboard history tool inspired by Ditto on Windows: floating bubble + automatic clipboard recording + one-tap paste via accessibility + LAN / cloud-relay multi-device sync + LAN file sharing.
 
 Companion PC project: [pc-lscopy (copy-pc)](https://github.com/duangdangding/pc-lscopy) — syncs clips and exchanges files with this app.

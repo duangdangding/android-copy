@@ -60,6 +60,18 @@ class AboutActivity : AppCompatActivity() {
         bindLink(R.id.tvLinkPc, "https://github.com/duangdangding/pc-lscopy/releases")
         bindLink(R.id.tvLinkAndroid, "https://github.com/duangdangding/android-copy")
 
+        // 开源声明卡片：Star 按钮跳转本项目 GitHub 仓库
+        findViewById<Button>(R.id.btnStar).setOnClickListener {
+            runCatching {
+                startActivity(
+                    Intent(Intent.ACTION_VIEW,
+                        Uri.parse("https://github.com/duangdangding/android-copy"))
+                )
+            }.onFailure {
+                Toast.makeText(this, "无法打开浏览器", Toast.LENGTH_SHORT).show()
+            }
+        }
+
         // 进入页面自动检查一次
         checkUpdate(manual = false)
     }
