@@ -56,6 +56,7 @@ import java.util.Locale
 /**
  * 「文件共享」页：
  * 顶部本机信息行（名称 + IP:端口）与「自动接收」开关、存储位置说明，
+ * 待接收列表（多个文件/设备同时发来时逐个或批量答复，30 秒未处理自动拒绝），
  * 中部在线设备列表（点击设备 → 选文件发送；或「输入 IP 发送」/「刷新」），
  * 底部接收记录（单击看详情/打开文件，长按进入多选批量删除）。
  */
@@ -68,11 +69,18 @@ class FileShareActivity : AppCompatActivity() {
     /** 文件选择完成后要发送到的目标（host, port）；点设备或输 IP 时先记下 */
     private var pendingTarget: Pair<String, Int>? = null
 
-    /** 主线程 Handler：接收确认弹窗 30 秒自动关闭用 */
+    /** 主线程 Handler：待接收列表倒计时刷新用 */
     private val uiHandler = Handler(Looper.getMainLooper())
 
-    /** 进行中确认弹窗的超时任务（Activity 销毁时统一移除，防泄漏） */
-    private val confirmTimeouts = mutableListOf<Runnable>()
+    /** 待接收项：请求 + 自动拒绝截止时刻（与服务端 30 秒确认超时一致）+ 倒计时视图 */
+    private data class PendingUi(
+        val transfer: PendingTransfer,
+        val deadline: Long,
+        var cdView: TextView? = null
+    )
+
+    /** 待接收列表内容（按到达顺序展示） */
+    private val pendingUis = LinkedHashMap<String, PendingUi>()
 
     // 接收记录多选状态
     private var records: List<TransferRecord> = emptyList()
@@ -142,6 +150,15 @@ class FileShareActivity : AppCompatActivity() {
         onBackPressedDispatcher.addCallback(this, backCallback)
 
         findViewById<Button>(R.id.btnSendIp).setOnClickListener { showIpDialog() }
+
+        // 待接收列表的批量答复
+        findViewById<Button>(R.id.btnAcceptAll).setOnClickListener {
+            pendingUis.keys.toList().forEach { respondPending(it, true) }
+        }
+        findViewById<Button>(R.id.btnRejectAll).setOnClickListener {
+            pendingUis.keys.toList().forEach { respondPending(it, false) }
+        }
+
         findViewById<Button>(R.id.btnRefresh).setOnClickListener {
             // 主动询问在线设备立即回应；beacon 监听 socket 异常时顺便触发重建
             FileShareManager.discovery.queryNow()
@@ -184,8 +201,8 @@ class FileShareActivity : AppCompatActivity() {
         if (checkAppLock()) return
         // 从设置页返回时，窗口效果可能已变更，重新应用
         com.clipditto.app.util.WindowEffect.apply(this)
-        // 注册前台确认弹窗：本页可见时来文件直接弹窗，不走通知
-        FileShareManager.confirmUiHandler = { p -> showReceiveConfirm(p) }
+        // 注册前台确认入口：本页可见时来文件进入待接收列表，不走通知
+        FileShareManager.confirmUiHandler = { p -> addPending(p) }
         FileShareManager.discovery.queryNow()
         refreshUi()
         refreshMyInfo()
@@ -197,9 +214,8 @@ class FileShareActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        // 移除所有确认弹窗的超时任务，防止 Activity 销毁后回调泄漏
-        confirmTimeouts.forEach { uiHandler.removeCallbacks(it) }
-        confirmTimeouts.clear()
+        // 移除待接收列表的倒计时任务，防止 Activity 销毁后回调泄漏
+        uiHandler.removeCallbacks(pendingTicker)
         super.onDestroy()
     }
 
@@ -238,54 +254,76 @@ class FileShareActivity : AppCompatActivity() {
             else "本机：$name · $ip:$port"
     }
 
-    // ---------------- 接收确认（前台弹窗） ----------------
+    // ---------------- 待接收列表（前台手动确认） ----------------
+
+    /** 每秒刷新待接收倒计时并移除已超时项（服务端已按超时拒收，无需再答复） */
+    private val pendingTicker = object : Runnable {
+        override fun run() {
+            val now = System.currentTimeMillis()
+            var removed = false
+            val it = pendingUis.entries.iterator()
+            while (it.hasNext()) {
+                val ui = it.next().value
+                val left = (ui.deadline - now) / 1000
+                if (left <= 0) {
+                    it.remove()
+                    removed = true
+                } else {
+                    ui.cdView?.text = "${left}s"
+                }
+            }
+            if (removed) renderPending()
+            if (pendingUis.isNotEmpty()) uiHandler.postDelayed(this, 1_000)
+        }
+    }
 
     /**
-     * 接收确认弹窗：在 HTTP 服务线程上被调用，转到主线程展示；
+     * 前台收到接收请求：加入待接收列表（在 HTTP 服务线程上被调用，转到主线程）。
+     * 多个文件/设备同时发来时全部列出，可逐个或批量答复；
      * 用户点击后通过 resolvePending 解出服务线程的等待锁。
-     * 30 秒未操作自动按拒收处理并关闭弹窗（与服务端等待超时一致）。
      */
-    private fun showReceiveConfirm(p: PendingTransfer) {
+    private fun addPending(p: PendingTransfer) {
         runOnUiThread {
             if (isFinishing || isDestroyed) {
                 FileShareManager.resolvePending(p.id, false)
                 return@runOnUiThread
             }
-            val view = LayoutInflater.from(this).inflate(R.layout.dialog_fs_receive, null)
-            view.findViewById<TextView>(R.id.tvRecvAvatar).text =
-                p.fromDeviceName.firstOrNull()?.toString() ?: "?"
-            view.findViewById<TextView>(R.id.tvRecvFrom).text =
-                "来自「${p.fromDeviceName}」"
-            view.findViewById<TextView>(R.id.tvRecvFileIcon).text =
-                p.fileName.firstOrNull()?.toString() ?: "件"
-            view.findViewById<TextView>(R.id.tvRecvFileName).text = p.fileName
-            view.findViewById<TextView>(R.id.tvRecvFileSize).text =
-                FileShareManager.formatSize(p.fileSize)
+            pendingUis[p.id] = PendingUi(p, System.currentTimeMillis() + 30_000)
+            renderPending()
+            uiHandler.removeCallbacks(pendingTicker)
+            uiHandler.postDelayed(pendingTicker, 1_000)
+        }
+    }
 
-            val dialog = MaterialAlertDialogBuilder(this)
-                .setView(view)
-                .setCancelable(false)
-                .create()
-            view.findViewById<View>(R.id.btnRecvAccept).setOnClickListener {
-                FileShareManager.resolvePending(p.id, true)
-                dialog.dismiss()
-            }
-            view.findViewById<View>(R.id.btnRecvReject).setOnClickListener {
-                FileShareManager.resolvePending(p.id, false)
-                dialog.dismiss()
-            }
-            // 30 秒自动关闭：按拒收处理；弹窗被 dismiss 时（含这里）移除该任务
-            val timeoutTask = Runnable {
-                FileShareManager.resolvePending(p.id, false)
-                runCatching { if (dialog.isShowing) dialog.dismiss() }
-            }
-            dialog.setOnDismissListener {
-                uiHandler.removeCallbacks(timeoutTask)
-                confirmTimeouts.remove(timeoutTask)
-            }
-            confirmTimeouts.add(timeoutTask)
-            dialog.show()
-            uiHandler.postDelayed(timeoutTask, 30_000)
+    /** 答复一个待接收请求：从列表移除并解出服务端等待锁 */
+    private fun respondPending(id: String, accept: Boolean) {
+        pendingUis.remove(id)
+        renderPending()
+        FileShareManager.resolvePending(id, accept)
+    }
+
+    /** 重建待接收列表（数据量小，全量重建即可；倒计时由 ticker 每秒更新） */
+    private fun renderPending() {
+        val panel = findViewById<View>(R.id.pendingPanel)
+        val list = findViewById<LinearLayout>(R.id.pendingList)
+        findViewById<TextView>(R.id.tvPendingTitle).text = "待接收（${pendingUis.size}）"
+        panel.visibility = if (pendingUis.isEmpty()) View.GONE else View.VISIBLE
+        list.removeAllViews()
+        val now = System.currentTimeMillis()
+        for (ui in pendingUis.values) {
+            val p = ui.transfer
+            val item = layoutInflater.inflate(R.layout.item_fs_pending, list, false)
+            item.findViewById<TextView>(R.id.tvPendingFileName).text = p.fileName
+            item.findViewById<TextView>(R.id.tvPendingFrom).text =
+                "来自「${p.fromDeviceName}」 · ${FileShareManager.formatSize(p.fileSize)}"
+            val cd = item.findViewById<TextView>(R.id.tvPendingCd)
+            cd.text = "${((ui.deadline - now) / 1000).coerceAtLeast(0)}s"
+            ui.cdView = cd
+            item.findViewById<View>(R.id.btnPendingAccept)
+                .setOnClickListener { respondPending(p.id, true) }
+            item.findViewById<View>(R.id.btnPendingReject)
+                .setOnClickListener { respondPending(p.id, false) }
+            list.addView(item)
         }
     }
 

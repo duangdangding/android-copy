@@ -66,6 +66,77 @@
         android:layout_height="1dp"
         android:background="@color/divider" />
 
+    <!-- 待接收：多个文件/设备同时发来时逐个或批量答复 -->
+    <LinearLayout
+        android:id="@+id/pendingPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="16dp"
+            android:paddingTop="8dp">
+
+            <TextView
+                android:id="@+id/tvPendingTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="待接收（0）"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/btnAcceptAll"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="0dp"
+                android:minHeight="36dp"
+                android:paddingHorizontal="12dp"
+                android:text="全部接收"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnRejectAll"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:minWidth="0dp"
+                android:minHeight="36dp"
+                android:paddingHorizontal="12dp"
+                android:text="全部拒绝"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="16dp"
+            android:paddingTop="2dp"
+            android:text="每个请求 30 秒未处理将自动拒绝"
+            android:textColor="@color/text_hint"
+            android:textSize="11sp" />
+
+        <LinearLayout
+            android:id="@+id/pendingList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp"
+            android:paddingTop="6dp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="2dp"
+            android:background="@color/divider" />
+    </LinearLayout>
+
     <!-- 在线设备 -->
     <LinearLayout
         android:layout_width="match_parent"

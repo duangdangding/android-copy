@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 一次待确认的传入文件：body 已由 LanSyncServer 完整落到临时文件，
- * 正在等待用户确认（或自动接收）。id 用于确认弹窗/通知按钮回传。
+ * 正在等待用户确认（或自动接收）。id 用于待接收列表/通知按钮回传。
  */
 class PendingTransfer(
     val id: String,
@@ -73,7 +73,7 @@ object FileShareManager {
     private val pending = ConcurrentHashMap<String, Waiter>()
     private val notifySeq = AtomicInteger(0)
 
-    /** 文件共享页在前台时注册的确认弹窗处理器（在 HTTP 服务线程上被调用，不得阻塞） */
+    /** 文件共享页在前台时注册的确认界面处理器（待接收列表；在 HTTP 服务线程上被调用，不得阻塞） */
     @Volatile
     var confirmUiHandler: ((PendingTransfer) -> Unit)? = null
 
@@ -118,7 +118,7 @@ object FileShareManager {
 
     /**
      * 决定是否接收一份已落到临时文件的传入文件（在 HTTP 服务线程上调用，可阻塞）。
-     * 自动接收 → 直接通过；页面在前台 → 弹窗确认；否则 → 通知栏「接收/拒绝」。
+     * 自动接收 → 直接通过；页面在前台 → 待接收列表确认；否则 → 通知栏「接收/拒绝」。
      * 最多等待 [CONFIRM_TIMEOUT_SEC] 秒，超时按拒收处理。
      */
     private fun awaitAccept(
@@ -136,11 +136,11 @@ object FileShareManager {
         )
         val handler = confirmUiHandler
         if (handler != null) {
-            // 前台弹窗路径：不需要通知
+            // 前台列表路径：不需要通知
             val w = Waiter(CountDownLatch(1), AtomicBoolean(false), 0)
             pending[p.id] = w
             return try {
-                // 弹窗展示失败（页面已销毁等）时按拒收处理
+                // 列表展示失败（页面已销毁等）时按拒收处理
                 runCatching { handler(p) }.onFailure { resolvePending(p.id, false) }
                 w.latch.await(CONFIRM_TIMEOUT_SEC, TimeUnit.SECONDS) && w.result.get()
             } finally {
@@ -166,7 +166,7 @@ object FileShareManager {
         }
     }
 
-    /** 弹窗/通知按钮回调：解出对应传输的等待锁 */
+    /** 待接收列表/通知按钮回调：解出对应传输的等待锁 */
     fun resolvePending(transferId: String, accept: Boolean) {
         pending[transferId]?.let {
             it.result.set(accept)
