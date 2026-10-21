@@ -70,3 +70,7 @@
 - `start-shizuku.ps1` / `start-shizuku.bat`：一键为所有 adb 连接设备启动 Shizuku 服务的辅助脚本（开发调试用，非 App 组成部分）。
 - `shizuku-v13.6.0.apk`：调试用的 Shizuku 安装包，勿删。
 - `README.md` / `README.en.md`：用户向说明，功能变更后需同步更新。
+
+## 排障备忘
+
+- **GitHub 默认直连，代理仅作临时后备**：clone / fetch / push 一律直连（origin 走 SSH `git@github.com:duangdangding/android-copy.git`）。仅当直连确实失败（网络封锁、DNS 污染等）时才临时切代理，用完即切回直连，不要留下代理配置常驻。
