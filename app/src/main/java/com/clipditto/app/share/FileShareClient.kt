@@ -52,11 +52,84 @@ class FileShareClient(private val lanSettings: LanSettings) {
     /** /fs/send 路由不存在：对方是 PC/旧协议，降级 /recv 重试 */
     private class RouteNotFoundException : Exception()
 
+    /** 批量清单提议结果 */
+    sealed class BatchPlan {
+        /** 对方勾选的文件序号（空 = 全部拒绝） */
+        class Accepted(val indices: List<Int>) : BatchPlan()
+
+        /** 对方是旧版（无 /batch 端点），回退逐文件发送（逐个确认） */
+        object Unsupported : BatchPlan()
+
+        /** 失败（连接/超时/被拒等），message 可直接展示 */
+        class Failed(val error: FsSendException) : BatchPlan()
+    }
+
+    /**
+     * 先交批量清单（POST /batch）：对方在待接收列表逐个勾选后返回接受的文件序号。
+     * 旧版对端返回 404 → [BatchPlan.Unsupported]；对方逐个勾选最多 120 秒，读超时留足余量。
+     */
+    fun proposeBatch(
+        host: String, port: Int, batchId: String, files: List<Pair<String, Long>>
+    ): BatchPlan {
+        throwIfCancelled()
+        val conn = URL("http://${bracket(host)}:$port/batch").openConnection() as HttpURLConnection
+        return try {
+            conn.connectTimeout = 5_000
+            conn.readTimeout = 150_000
+            conn.requestMethod = "POST"
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("X-Device-Id", lanSettings.deviceId)
+            conn.setRequestProperty(
+                "X-Device-Name", URLEncoder.encode(lanSettings.deviceName, "UTF-8")
+            )
+            conn.setRequestProperty(
+                "X-Device-Model", URLEncoder.encode(lanSettings.deviceModel, "UTF-8")
+            )
+            val body = gson.toJson(JsonObject().apply {
+                addProperty("batchId", batchId)
+                add("files", gson.toJsonTree(files.map {
+                    JsonObject().apply {
+                        addProperty("name", it.first)
+                        addProperty("size", it.second)
+                    }
+                }))
+            }).toByteArray(Charsets.UTF_8)
+            conn.setFixedLengthStreamingMode(body.size.toLong())
+            activeConn = conn
+            conn.outputStream.use { it.write(body) }
+            throwIfCancelled()
+            when (val code = conn.responseCode) {
+                200 -> {
+                    val resp = gson.fromJson(
+                        conn.inputStream.bufferedReader().use { it.readText() },
+                        JsonObject::class.java
+                    )
+                    val arr = resp?.getAsJsonArray("accepted")
+                    BatchPlan.Accepted(arr?.map { it.asInt } ?: emptyList())
+                }
+                404 -> BatchPlan.Unsupported
+                409 -> BatchPlan.Failed(FsSendException("等待对方确认超时"))
+                403 -> BatchPlan.Failed(FsSendException("对方拒绝接收"))
+                else -> BatchPlan.Failed(FsSendException("批量请求失败（HTTP $code）"))
+            }
+        } catch (e: SocketTimeoutException) {
+            BatchPlan.Failed(FsSendException("对方无响应（等待确认超时）"))
+        } catch (e: IOException) {
+            if (cancelled) BatchPlan.Failed(FsSendException("已取消发送"))
+            else BatchPlan.Failed(FsSendException("连接失败：${e.message}"))
+        } finally {
+            if (activeConn === conn) activeConn = null
+            conn.disconnect()
+        }
+    }
+
     private enum class Protocol { FS, RECV, UNKNOWN }
 
     /**
      * 发送一个文件。成功正常返回，失败抛 [FsSendException]。
      * @param size 文件准确大小（固定长度传输，接收方据此校验完整性）
+     * @param batchId 批量清单 id（对方已勾选，免确认）；null 表示逐文件发送
      * @param openStream 打开文件内容流的工厂（可能被调用两次：/fs/send 404 降级 /recv 时）
      */
     fun send(
@@ -65,15 +138,16 @@ class FileShareClient(private val lanSettings: LanSettings) {
         fileName: String,
         mime: String?,
         size: Long,
+        batchId: String? = null,
         openStream: () -> InputStream?
     ) {
         when (probeProtocol(host, port)) {
-            Protocol.RECV -> sendRecv(host, port, fileName, size, openStream)
+            Protocol.RECV -> sendRecv(host, port, fileName, size, batchId, openStream)
             else -> try {
-                sendFs(host, port, fileName, mime, size, openStream)
+                sendFs(host, port, fileName, mime, size, batchId, openStream)
             } catch (e: RouteNotFoundException) {
                 // 对方没有 /fs/send（PC 端/旧版）：降级走 /recv
-                sendRecv(host, port, fileName, size, openStream)
+                sendRecv(host, port, fileName, size, batchId, openStream)
             }
         }
     }
@@ -110,7 +184,7 @@ class FileShareClient(private val lanSettings: LanSettings) {
 
     private fun sendFs(
         host: String, port: Int, fileName: String, mime: String?,
-        size: Long, openStream: () -> InputStream?
+        size: Long, batchId: String?, openStream: () -> InputStream?
     ) {
         val conn = URL("http://${bracket(host)}:$port/fs/send")
             .openConnection() as HttpURLConnection
@@ -118,6 +192,7 @@ class FileShareClient(private val lanSettings: LanSettings) {
         conn.readTimeout = 45_000
         conn.setRequestProperty("X-File-Name", URLEncoder.encode(fileName, "UTF-8"))
         mime?.let { conn.setRequestProperty("X-Mime", URLEncoder.encode(it, "UTF-8")) }
+        batchId?.let { conn.setRequestProperty("X-Batch-Id", it) }
         try {
             when (val code = postFile(conn, size, openStream)) {
                 200 -> return
@@ -138,13 +213,14 @@ class FileShareClient(private val lanSettings: LanSettings) {
 
     private fun sendRecv(
         host: String, port: Int, fileName: String,
-        size: Long, openStream: () -> InputStream?
+        size: Long, batchId: String?, openStream: () -> InputStream?
     ) {
         val q = "name=${URLEncoder.encode(fileName, "UTF-8")}&size=$size"
         val conn = URL("http://${bracket(host)}:$port/recv?$q")
             .openConnection() as HttpURLConnection
         // PC 端弹窗手动确认最多 60 秒，读超时必须大于它
         conn.readTimeout = 75_000
+        batchId?.let { conn.setRequestProperty("X-Batch-Id", it) }
         try {
             when (val code = postFile(conn, size, openStream)) {
                 200 -> return

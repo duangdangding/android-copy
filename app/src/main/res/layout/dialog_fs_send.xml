@@ -88,6 +88,20 @@
             android:textStyle="bold" />
     </LinearLayout>
 
+    <!-- 本次要发送的文件列表（每个文件一行：状态图标 + 文件名） -->
+    <ScrollView
+        android:id="@+id/sendFileScroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp">
+
+        <LinearLayout
+            android:id="@+id/sendFileList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </ScrollView>
+
     <Button
         android:id="@+id/btnSendCancel"
         android:layout_width="match_parent"

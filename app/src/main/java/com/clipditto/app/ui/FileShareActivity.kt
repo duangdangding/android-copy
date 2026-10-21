@@ -17,6 +17,7 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
@@ -38,6 +39,7 @@ import com.clipditto.app.data.TransferRecord
 import com.clipditto.app.share.FileShareClient
 import com.clipditto.app.share.FileShareManager
 import com.clipditto.app.share.FsDevice
+import com.clipditto.app.share.PendingBatch
 import com.clipditto.app.share.PendingTransfer
 import com.clipditto.app.sync.LanSettings
 import com.clipditto.app.sync.LanSyncManager
@@ -52,6 +54,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 /**
  * 「文件共享」页：
@@ -81,6 +84,16 @@ class FileShareActivity : AppCompatActivity() {
 
     /** 待接收列表内容（按到达顺序展示） */
     private val pendingUis = LinkedHashMap<String, PendingUi>()
+
+    /** 待接收的批量清单：请求 + 勾选截止时刻（与服务端 120 秒一致）+ 倒计时视图 */
+    private data class PendingBatchUi(
+        val batch: PendingBatch,
+        val deadline: Long,
+        var cdView: TextView? = null
+    )
+
+    /** 待接收的批量清单（按到达顺序展示，排在单文件之前） */
+    private val pendingBatches = LinkedHashMap<String, PendingBatchUi>()
 
     // 接收记录多选状态
     private var records: List<TransferRecord> = emptyList()
@@ -153,9 +166,13 @@ class FileShareActivity : AppCompatActivity() {
 
         // 待接收列表的批量答复
         findViewById<Button>(R.id.btnAcceptAll).setOnClickListener {
+            pendingBatches.values.toList().forEach {
+                respondPendingBatch(it.batch.id, it.batch.files.indices.toList())
+            }
             pendingUis.keys.toList().forEach { respondPending(it, true) }
         }
         findViewById<Button>(R.id.btnRejectAll).setOnClickListener {
+            pendingBatches.keys.toList().forEach { respondPendingBatch(it, emptyList()) }
             pendingUis.keys.toList().forEach { respondPending(it, false) }
         }
 
@@ -203,6 +220,7 @@ class FileShareActivity : AppCompatActivity() {
         com.clipditto.app.util.WindowEffect.apply(this)
         // 注册前台确认入口：本页可见时来文件进入待接收列表，不走通知
         FileShareManager.confirmUiHandler = { p -> addPending(p) }
+        FileShareManager.batchUiHandler = { p -> addPendingBatch(p) }
         FileShareManager.discovery.queryNow()
         refreshUi()
         refreshMyInfo()
@@ -211,6 +229,7 @@ class FileShareActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         FileShareManager.confirmUiHandler = null
+        FileShareManager.batchUiHandler = null
     }
 
     override fun onDestroy() {
@@ -272,8 +291,21 @@ class FileShareActivity : AppCompatActivity() {
                     ui.cdView?.text = "${left}s"
                 }
             }
+            val bit = pendingBatches.entries.iterator()
+            while (bit.hasNext()) {
+                val ui = bit.next().value
+                val left = (ui.deadline - now) / 1000
+                if (left <= 0) {
+                    bit.remove()
+                    removed = true
+                } else {
+                    ui.cdView?.text = "${left}s"
+                }
+            }
             if (removed) renderPending()
-            if (pendingUis.isNotEmpty()) uiHandler.postDelayed(this, 1_000)
+            if (pendingUis.isNotEmpty() || pendingBatches.isNotEmpty()) {
+                uiHandler.postDelayed(this, 1_000)
+            }
         }
     }
 
@@ -309,14 +341,44 @@ class FileShareActivity : AppCompatActivity() {
         FileShareManager.resolvePendingAndTrust(id)
     }
 
+    /**
+     * 前台收到批量清单：加入待接收列表（在 HTTP 服务线程上被调用，转到主线程）。
+     * 用户逐个勾选后通过 resolvePendingBatch 解出服务线程的等待锁。
+     */
+    private fun addPendingBatch(p: PendingBatch) {
+        runOnUiThread {
+            if (isFinishing || isDestroyed) {
+                FileShareManager.resolvePendingBatch(p.id, emptyList())
+                return@runOnUiThread
+            }
+            pendingBatches[p.id] = PendingBatchUi(p, System.currentTimeMillis() + 120_000)
+            renderPending()
+            uiHandler.removeCallbacks(pendingTicker)
+            uiHandler.postDelayed(pendingTicker, 1_000)
+        }
+    }
+
+    /** 答复批量清单：提交勾选的文件序号（空列表 = 全部拒绝） */
+    private fun respondPendingBatch(id: String, accepted: List<Int>) {
+        pendingBatches.remove(id)
+        renderPending()
+        FileShareManager.resolvePendingBatch(id, accepted)
+    }
+
     /** 重建待接收列表（数据量小，全量重建即可；倒计时由 ticker 每秒更新） */
     private fun renderPending() {
         val panel = findViewById<View>(R.id.pendingPanel)
         val list = findViewById<LinearLayout>(R.id.pendingList)
-        findViewById<TextView>(R.id.tvPendingTitle).text = "待接收（${pendingUis.size}）"
-        panel.visibility = if (pendingUis.isEmpty()) View.GONE else View.VISIBLE
+        // 计数 = 批量清单里的文件数 + 单文件请求数
+        val total = pendingBatches.values.sumOf { it.batch.files.size } + pendingUis.size
+        findViewById<TextView>(R.id.tvPendingTitle).text = "待接收（$total）"
+        panel.visibility = if (total == 0) View.GONE else View.VISIBLE
         list.removeAllViews()
         val now = System.currentTimeMillis()
+        // 批量清单排在前：整组文件逐个勾选
+        for (ui in pendingBatches.values) {
+            list.addView(buildBatchItem(list, ui, now))
+        }
         for (ui in pendingUis.values) {
             val p = ui.transfer
             val item = layoutInflater.inflate(R.layout.item_fs_pending, list, false)
@@ -334,6 +396,44 @@ class FileShareActivity : AppCompatActivity() {
                 .setOnClickListener { respondPending(p.id, false) }
             list.addView(item)
         }
+    }
+
+    /**
+     * 构建一条批量清单项：文件名/大小逐个列出，CheckBox 默认全选，
+     * 「接收所选」提交勾选序号，「全部拒绝」整批拒收。
+     */
+    private fun buildBatchItem(parent: ViewGroup, ui: PendingBatchUi, now: Long): View {
+        val b = ui.batch
+        val item = layoutInflater.inflate(R.layout.item_fs_pending_batch, parent, false)
+        item.findViewById<TextView>(R.id.tvBatchTitle).text = "批量文件（${b.files.size} 个）"
+        val totalSize = b.files.sumOf { it.size }
+        item.findViewById<TextView>(R.id.tvBatchFrom).text =
+            "来自「${b.fromDeviceName}」 · 共 ${FileShareManager.formatSize(totalSize)}"
+        val cd = item.findViewById<TextView>(R.id.tvBatchCd)
+        cd.text = "${((ui.deadline - now) / 1000).coerceAtLeast(0)}s"
+        ui.cdView = cd
+
+        val fileList = item.findViewById<LinearLayout>(R.id.batchFileList)
+        val boxes = b.files.mapIndexed { i, f ->
+            CheckBox(this).apply {
+                text = "${f.name}（${FileShareManager.formatSize(f.size)}）"
+                textSize = 13f
+                isChecked = true
+                setOnLongClickListener {
+                    Toast.makeText(this@FileShareActivity, f.name, Toast.LENGTH_SHORT).show()
+                    true
+                }
+                fileList.addView(this)
+            }
+        }
+        item.findViewById<View>(R.id.btnBatchAccept).setOnClickListener {
+            val accepted = boxes.mapIndexedNotNull { i, cb -> if (cb.isChecked) i else null }
+            respondPendingBatch(b.id, accepted)
+        }
+        item.findViewById<View>(R.id.btnBatchReject).setOnClickListener {
+            respondPendingBatch(b.id, emptyList())
+        }
+        return item
     }
 
     // ---------------- 发送 ----------------
@@ -405,7 +505,12 @@ class FileShareActivity : AppCompatActivity() {
         SendMeta(name ?: "文件", mime, tmp.length(), tmp)
     }.getOrNull()
 
-    /** 逐个发送所选文件，期间显示进度弹窗（可取消），结束后弹出汇总结果 */
+    /**
+     * 发送所选文件：先解析全部元数据并展示完整文件列表，再向对方提交批量清单——
+     * 对方在待接收列表逐个勾选，只发送勾选的文件（带清单 id 免二次确认）；
+     * 旧版对端无 /batch 端点时自动回退为逐文件发送、逐个确认。
+     * 期间显示进度弹窗（可取消），结束后弹出汇总结果。
+     */
     private fun sendFiles(uris: List<Uri>, host: String, port: Int) {
         val view = LayoutInflater.from(this).inflate(R.layout.dialog_fs_send, null)
         val progressBar = view.findViewById<ProgressBar>(R.id.progressSend).apply {
@@ -415,8 +520,55 @@ class FileShareActivity : AppCompatActivity() {
         val tvFile = view.findViewById<TextView>(R.id.tvSendFile)
         val tvCount = view.findViewById<TextView>(R.id.tvSendCount)
         val btnCancel = view.findViewById<Button>(R.id.btnSendCancel)
+        val scroll = view.findViewById<ScrollView>(R.id.sendFileScroll)
+        val fileList = view.findViewById<LinearLayout>(R.id.sendFileList)
         view.findViewById<TextView>(R.id.tvSendTarget).text = "发送到 $host:$port"
         tvCount.text = "0/${uris.size}"
+
+        val okColor = androidx.core.content.ContextCompat.getColor(this, R.color.badge_image)
+        val errColor = androidx.core.content.ContextCompat.getColor(this, R.color.badge_video)
+        val hintColor = androidx.core.content.ContextCompat.getColor(this, R.color.text_hint)
+        val accentColor = androidx.core.content.ContextCompat.getColor(this, R.color.accent_link)
+
+        // 文件列表行：状态图标（○ 等待 / ⟳ 发送中 / ✓ 成功 / ✗ 失败 / — 未发送）+ 文件名
+        data class Row(val icon: TextView, val name: TextView)
+
+        val padV = (4 * resources.displayMetrics.density).toInt()
+        val rows = uris.map { uri ->
+            val icon = TextView(this).apply {
+                text = "○"
+                textSize = 13f
+                setTextColor(hintColor)
+                minWidth = (22 * resources.displayMetrics.density).toInt()
+            }
+            val name = TextView(this).apply {
+                text = uri.lastPathSegment ?: "文件"
+                textSize = 13f
+                setTextColor(androidx.core.content.ContextCompat.getColor(
+                    this@FileShareActivity, R.color.text_primary))
+                isSingleLine = true
+                ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+                layoutParams = LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(0, padV, 0, padV)
+                addView(icon)
+                addView(name)
+            }
+            fileList.addView(row)
+            Row(icon, name)
+        }
+        // 文件多时限制列表高度，内部滚动
+        scroll.post {
+            val maxH = (220 * resources.displayMetrics.density).toInt()
+            if (scroll.height > maxH) {
+                scroll.layoutParams.height = maxH
+                scroll.requestLayout()
+            }
+        }
 
         val dialog = MaterialAlertDialogBuilder(this)
             .setView(view)
@@ -436,35 +588,132 @@ class FileShareActivity : AppCompatActivity() {
             var ok = 0
             var cancelled = false
             val failures = mutableListOf<String>()
+            var done = 0
+            fun bump() {
+                done++
+                progressBar.progress = done
+                tvCount.text = "$done/${uris.size}"
+            }
+
+            // 1) 解析所有文件元数据；读不到的直接标记失败
+            val metas = arrayOfNulls<SendMeta>(uris.size)
             for ((i, uri) in uris.withIndex()) {
                 val meta = withContext(Dispatchers.IO) { resolveMeta(uri) }
                 if (meta == null) {
                     failures.add("（第 ${i + 1} 个文件无法读取信息）")
-                    progressBar.progress = i + 1
-                    tvCount.text = "${i + 1}/${uris.size}"
-                    continue
+                    rows[i].icon.text = "✗"
+                    rows[i].icon.setTextColor(errColor)
+                    bump()
+                } else {
+                    metas[i] = meta
+                    rows[i].name.text = meta.name
                 }
+            }
+
+            val readyIdx = metas.indices.filter { metas[it] != null }
+            if (readyIdx.isEmpty()) {
+                dialog.dismiss()
+                showSendResult(ok, failures, cancelled)
+                return@launch
+            }
+
+            // 2) 提交批量清单：对方在待接收列表逐个勾选后返回接受的文件序号
+            var batchId: String? = null
+            var sendIdx = readyIdx
+            tvFile.text = "等待对方勾选接收…"
+            val id = UUID.randomUUID().toString()
+            val plan = withContext(Dispatchers.IO) {
+                client.proposeBatch(
+                    host, port, id,
+                    readyIdx.map { metas[it]!!.name to metas[it]!!.size }
+                )
+            }
+            when (plan) {
+                is FileShareClient.BatchPlan.Accepted -> {
+                    val accepted = plan.indices.toSet()
+                    // 清单序号对应 readyIdx 的顺序
+                    sendIdx = readyIdx.filterIndexed { pos, _ -> pos in accepted }
+                    readyIdx.forEachIndexed { pos, i ->
+                        if (pos !in accepted) {
+                            rows[i].icon.text = "—"
+                            rows[i].icon.setTextColor(hintColor)
+                            failures.add("${metas[i]!!.name}：对方未接收")
+                            metas[i]?.tmpFile?.delete()
+                            bump()
+                        }
+                    }
+                    if (sendIdx.isEmpty()) {
+                        dialog.dismiss()
+                        showSendResult(ok, failures, cancelled)
+                        return@launch
+                    }
+                    batchId = id
+                }
+                FileShareClient.BatchPlan.Unsupported -> {
+                    // 旧版对端（无 /batch 路由）：回退逐文件发送，对方逐个确认
+                    batchId = null
+                    sendIdx = readyIdx
+                }
+                is FileShareClient.BatchPlan.Failed -> {
+                    readyIdx.forEach { i ->
+                        rows[i].icon.text = "✗"
+                        rows[i].icon.setTextColor(errColor)
+                        metas[i]?.tmpFile?.delete()
+                        bump()
+                    }
+                    dialog.dismiss()
+                    if (plan.error.message?.contains("已取消") == true) {
+                        showSendResult(ok, failures, true)
+                    } else {
+                        failures.add(plan.error.message ?: "批量请求失败")
+                        showSendResult(ok, failures, false)
+                    }
+                    return@launch
+                }
+            }
+
+            // 3) 逐个发送（批量勾选的带 batchId 免确认；回退模式不带，对方逐个确认）
+            for (i in sendIdx) {
+                val meta = metas[i]!!
                 tvFile.text = meta.name
-                tvCount.text = "${i + 1}/${uris.size}"
+                rows[i].icon.text = "⟳"
+                rows[i].icon.setTextColor(accentColor)
                 val err = withContext(Dispatchers.IO) {
                     runCatching {
-                        client.send(host, port, meta.name, meta.mime, meta.size) {
+                        client.send(host, port, meta.name, meta.mime, meta.size, batchId) {
                             meta.tmpFile?.inputStream()
-                                ?: contentResolver.openInputStream(uri)
+                                ?: contentResolver.openInputStream(uris[i])
                         }
                     }.exceptionOrNull()?.message
                 }
                 meta.tmpFile?.delete()
                 when {
-                    err == null -> ok++
+                    err == null -> {
+                        ok++
+                        rows[i].icon.text = "✓"
+                        rows[i].icon.setTextColor(okColor)
+                    }
                     err.contains("已取消") -> {
                         cancelled = true
-                        progressBar.progress = i + 1
+                        rows[i].icon.text = "✗"
+                        rows[i].icon.setTextColor(errColor)
+                        bump()
+                        // 剩余未发送的标记跳过
+                        sendIdx.drop(sendIdx.indexOf(i) + 1).forEach { j ->
+                            rows[j].icon.text = "—"
+                            rows[j].icon.setTextColor(hintColor)
+                            metas[j]?.tmpFile?.delete()
+                            bump()
+                        }
                         break
                     }
-                    else -> failures.add("${meta.name}：$err")
+                    else -> {
+                        failures.add("${meta.name}：$err")
+                        rows[i].icon.text = "✗"
+                        rows[i].icon.setTextColor(errColor)
+                    }
                 }
-                progressBar.progress = i + 1
+                bump()
             }
             dialog.dismiss()
             showSendResult(ok, failures, cancelled)

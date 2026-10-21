@@ -6,15 +6,16 @@ import android.content.Intent
 
 /**
  * 文件接收请求通知的「接收/拒绝」按钮回调。
- * 收到后解出对应传输的等待锁（通知的取消由 FileShareManager 在等待返回后统一处理）。
+ * 收到后解出对应传输的等待锁（单文件与批量清单按 id 自动分发；
+ * 通知的取消由 FileShareManager 在等待返回后统一处理）。
  */
 class FileShareActionReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val id = intent.getStringExtra(EXTRA_TRANSFER_ID) ?: return
         when (intent.action) {
-            ACTION_ACCEPT -> FileShareManager.resolvePending(id, true)
-            ACTION_REJECT -> FileShareManager.resolvePending(id, false)
+            ACTION_ACCEPT -> FileShareManager.resolveAny(id, true)
+            ACTION_REJECT -> FileShareManager.resolveAny(id, false)
         }
     }
 

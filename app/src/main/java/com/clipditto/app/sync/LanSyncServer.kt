@@ -5,6 +5,7 @@ import android.util.Log
 import com.clipditto.app.data.ClipItem
 import com.clipditto.app.data.ClipRepository
 import com.google.gson.Gson
+import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import kotlinx.coroutines.runBlocking
 import java.io.BufferedInputStream
@@ -19,6 +20,9 @@ import java.nio.charset.StandardCharsets
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
+/** 批量清单里的一个待收文件 */
+data class BatchFile(val name: String, val size: Long)
+
 /**
  * 文件共享（POST /fs/send）接收处理器：由 share 包的 FileShareManager 注册/注销。
  * 定义在 sync 包以避免 sync → share 的反向依赖；文件共享本身免配对、免 token。
@@ -32,6 +36,18 @@ interface FsReceiveHandler {
         fileName: String, fileSize: Long, mime: String?,
         fromDeviceId: String?, fromDeviceName: String
     ): Boolean
+
+    /**
+     * 批量清单确认：返回用户勾选的文件序号列表（空列表 = 全部拒绝）；
+     * null = 等待超时。可阻塞最多 120 秒
+     */
+    fun awaitBatchAccept(
+        batchId: String, files: List<BatchFile>,
+        fromDeviceId: String?, fromDeviceName: String
+    ): List<Int>?
+
+    /** 批量清单命中：该文件在已勾选批次内则消耗一条并返回 true（免确认） */
+    fun consumeBatchAccept(batchId: String, fileName: String, fileSize: Long): Boolean
 
     /** 接收确认后落盘并写传送记录，返回保存路径；失败返回 null */
     fun persist(
@@ -53,6 +69,8 @@ interface FsReceiveHandler {
  * - GET /file?id=       拉取媒体文件（需配对码 + 共享开关开启）
  * - POST /fs/send       文件共享接收（免配对免 token，由 [FsReceiveHandler] 处理）
  * - POST /recv          PC 端（copy-pc）文件发送接口（同样走文件共享流程）
+ * - POST /batch         批量文件清单：先交文件名/大小列表给对方逐个勾选，
+ *   之后带 X-Batch-Id 的文件传输免确认（旧版无此端点，发送方回退逐文件发送）
  *
  * 配对码通过 X-Token 请求头传递；请求方在 X-Device-Id 里带自己的 deviceId，
  * 服务端据此过滤掉"本来就来自该设备"的记录，避免内容在两台设备间循环复制。
@@ -161,6 +179,7 @@ class LanSyncServer(
                 method == "POST" && path == "/fs/send" -> handleFsSend(input, output, headers)
                 method == "POST" && path == "/recv" ->
                     handleFsRecv(input, output, headers, query)
+                method == "POST" && path == "/batch" -> handleFsBatch(input, output, headers)
                 method == "POST" -> respond(output, 404, "text/plain", "Not Found")
                 else -> when (path) {
                     "/info" -> handleInfo(output, headers)
@@ -238,9 +257,17 @@ class LanSyncServer(
         )
         try {
             tmp.outputStream().use { out -> copyExactly(input, out, contentLength) }
-            val accept = runCatching {
-                handler.awaitAccept(fileName, tmp.length(), mime, fromId, fromName)
-            }.getOrDefault(false)
+            // 批量清单已勾选（X-Batch-Id 命中）则免确认，否则逐文件确认
+            val batchId = headers["x-batch-id"]
+            val accept = if (batchId != null &&
+                handler.consumeBatchAccept(batchId, fileName, tmp.length())
+            ) {
+                true
+            } else {
+                runCatching {
+                    handler.awaitAccept(fileName, tmp.length(), mime, fromId, fromName)
+                }.getOrDefault(false)
+            }
             if (!accept) {
                 Log.d(TAG, "文件共享接收被拒/超时：$fileName 来自 $fromName")
                 respond(output, 409, "application/json", """{"error":"rejected"}""")
@@ -294,11 +321,18 @@ class LanSyncServer(
         )
         try {
             tmp.outputStream().use { out -> copyExactly(input, out, contentLength) }
-            // PC 协议无 mime 字段，按 null 处理
+            // PC 协议无 mime 字段，按 null 处理；批量清单已勾选（X-Batch-Id 命中）则免确认
             val start = System.currentTimeMillis()
-            val accept = runCatching {
-                handler.awaitAccept(fileName, tmp.length(), null, fromId, fromName)
-            }.getOrDefault(false)
+            val batchId = headers["x-batch-id"]
+            val accept = if (batchId != null &&
+                handler.consumeBatchAccept(batchId, fileName, tmp.length())
+            ) {
+                true
+            } else {
+                runCatching {
+                    handler.awaitAccept(fileName, tmp.length(), null, fromId, fromName)
+                }.getOrDefault(false)
+            }
             if (!accept) {
                 // 区分用户主动拒绝与 30 秒确认超时（响应对齐 PC 协议格式）
                 val timeout = System.currentTimeMillis() - start >= 25_000
@@ -326,6 +360,72 @@ class LanSyncServer(
         } finally {
             tmp.delete()
         }
+    }
+
+    /**
+     * 批量文件清单：POST /batch，body 为 JSON（batchId + files 名称/大小列表）。
+     * 用户在待接收列表逐个勾选后响应 200，返回勾选的文件序号数组；全部拒绝为空数组；
+     * 120 秒未操作返回 409。旧版无此端点（404），发送方回退逐文件发送。
+     */
+    private fun handleFsBatch(
+        input: BufferedInputStream,
+        output: OutputStream,
+        headers: Map<String, String>
+    ) {
+        val handler = fsHandler
+        if (handler == null) {
+            respond(output, 403, "application/json", """{"error":"not_receiving"}""")
+            return
+        }
+        val contentLength = headers["content-length"]?.toLongOrNull()
+        if (contentLength == null || contentLength < 0) {
+            respond(output, 411, "application/json", """{"error":"length_required"}""")
+            return
+        }
+        // 清单上限 1MB（数百个文件足够），防超大请求体耗尽内存
+        if (contentLength > 1_000_000) {
+            respond(output, 413, "application/json", """{"error":"manifest_too_large"}""")
+            return
+        }
+        val buf = java.io.ByteArrayOutputStream()
+        try {
+            copyExactly(input, buf, contentLength)
+        } catch (e: EOFException) {
+            Log.w(TAG, "批量清单未传完连接就断了")
+            return
+        }
+        val json = runCatching {
+            gson.fromJson(String(buf.toByteArray(), StandardCharsets.UTF_8), JsonObject::class.java)
+        }.getOrNull()
+        val batchId = json?.get("batchId")?.asString ?: ""
+        val filesArr = json?.getAsJsonArray("files")
+        if (batchId.isEmpty() || filesArr == null || filesArr.size() == 0) {
+            respond(output, 400, "application/json", """{"error":"bad_manifest"}""")
+            return
+        }
+        // 单批最多 500 个文件；文件名与 /fs/send 的 X-File-Name 同口径（原文），按名称+大小匹配消耗
+        val files = filesArr.take(500).map {
+            val o = it.asJsonObject
+            BatchFile(o.get("name")?.asString ?: "文件", o.get("size")?.asLong ?: 0L)
+        }
+        val fromName = headers["x-device-name"]?.let { urlDecode(it) } ?: "未知设备"
+        val fromId = headers["x-device-id"]
+        val accepted = runCatching {
+            handler.awaitBatchAccept(batchId, files, fromId, fromName)
+        }.getOrNull()
+        if (accepted == null) {
+            Log.d(TAG, "批量清单确认超时：${files.size} 个文件来自 $fromName")
+            respond(output, 409, "application/json", """{"error":"confirm_timeout"}""")
+            return
+        }
+        val arr = JsonArray()
+        accepted.forEach { arr.add(it) }
+        val resp = JsonObject().apply {
+            addProperty("ok", 1)
+            add("accepted", arr)
+        }
+        Log.d(TAG, "批量清单已确认：接收 ${accepted.size}/${files.size} 个文件，来自 $fromName")
+        respond(output, 200, "application/json", gson.toJson(resp))
     }
 
     /** 精确读取 len 字节到输出流；对端提前断开抛 EOFException */    private fun copyExactly(input: InputStream, out: OutputStream, len: Long) {
