@@ -54,6 +54,17 @@
         android:textSize="12sp" />
 
     <Button
+        android:id="@+id/btnPendingTrust"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:minWidth="0dp"
+        android:minHeight="32dp"
+        android:paddingHorizontal="10dp"
+        android:text="本批都接收"
+        android:textSize="12sp" />
+
+    <Button
         android:id="@+id/btnPendingAccept"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

@@ -52,6 +52,9 @@ object FileShareManager {
     /** 手动确认等待上限（秒），超时按拒收处理 */
     private const val CONFIRM_TIMEOUT_SEC = 30L
 
+    /** 「本批都接收」临时免确认时长（毫秒，滑动续期：每自动接收一个文件重新计时） */
+    private const val TRUST_BATCH_MS = 10 * 60 * 1000L
+
     /** 接收请求通知 id 起始段（避开同步结果通知的 1002） */
     private const val NOTIFY_BASE = 3100
 
@@ -63,15 +66,19 @@ object FileShareManager {
         private set
     private var initialized = false
 
-    /** 等待确认的传输：transferId → 等待句柄 */
+    /** 等待确认的传输：transferId → 等待句柄（fromDeviceId 供「本批都接收」临时免确认） */
     private data class Waiter(
         val latch: CountDownLatch,
         val result: AtomicBoolean,
-        val notifyId: Int
+        val notifyId: Int,
+        val fromDeviceId: String?
     )
 
     private val pending = ConcurrentHashMap<String, Waiter>()
     private val notifySeq = AtomicInteger(0)
+
+    /** 「本批都接收」临时免确认：deviceId → 最近一次接收时刻（毫秒，10 分钟滑动有效） */
+    private val trustedSenders = ConcurrentHashMap<String, Long>()
 
     /** 文件共享页在前台时注册的确认界面处理器（待接收列表；在 HTTP 服务线程上被调用，不得阻塞） */
     @Volatile
@@ -126,6 +133,16 @@ object FileShareManager {
         fromDeviceId: String?, fromDeviceName: String
     ): Boolean {
         if (settings.autoReceive) return true
+        // 「本批都接收」临时免确认：同一设备 10 分钟内的后续文件直接收（每收一个重新计时）
+        if (fromDeviceId != null) {
+            val now = System.currentTimeMillis()
+            val last = trustedSenders[fromDeviceId]
+            if (last != null && now - last <= TRUST_BATCH_MS) {
+                trustedSenders[fromDeviceId] = now
+                return true
+            }
+            if (last != null) trustedSenders.remove(fromDeviceId)
+        }
         val p = PendingTransfer(
             id = UUID.randomUUID().toString(),
             fromDeviceId = fromDeviceId,
@@ -137,7 +154,7 @@ object FileShareManager {
         val handler = confirmUiHandler
         if (handler != null) {
             // 前台列表路径：不需要通知
-            val w = Waiter(CountDownLatch(1), AtomicBoolean(false), 0)
+            val w = Waiter(CountDownLatch(1), AtomicBoolean(false), 0, fromDeviceId)
             pending[p.id] = w
             return try {
                 // 列表展示失败（页面已销毁等）时按拒收处理
@@ -154,7 +171,7 @@ object FileShareManager {
         }
         val w = Waiter(
             CountDownLatch(1), AtomicBoolean(false),
-            NOTIFY_BASE + notifySeq.incrementAndGet() % 1000
+            NOTIFY_BASE + notifySeq.incrementAndGet() % 1000, fromDeviceId
         )
         pending[p.id] = w
         return try {
@@ -170,6 +187,15 @@ object FileShareManager {
     fun resolvePending(transferId: String, accept: Boolean) {
         pending[transferId]?.let {
             it.result.set(accept)
+            it.latch.countDown()
+        }
+    }
+
+    /** 「本批都接收」：接收该请求，并临时免确认同一设备 10 分钟内的后续文件 */
+    fun resolvePendingAndTrust(transferId: String) {
+        pending[transferId]?.let {
+            it.fromDeviceId?.let { id -> trustedSenders[id] = System.currentTimeMillis() }
+            it.result.set(true)
             it.latch.countDown()
         }
     }

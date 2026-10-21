@@ -118,7 +118,7 @@
             android:layout_height="wrap_content"
             android:paddingHorizontal="16dp"
             android:paddingTop="2dp"
-            android:text="每个请求 30 秒未处理将自动拒绝"
+            android:text="每个请求 30 秒未处理将自动拒绝；「本批都接收」后同一设备 10 分钟内自动接收"
             android:textColor="@color/text_hint"
             android:textSize="11sp" />
 

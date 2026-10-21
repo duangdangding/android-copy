@@ -302,6 +302,13 @@ class FileShareActivity : AppCompatActivity() {
         FileShareManager.resolvePending(id, accept)
     }
 
+    /** 「本批都接收」：接收该请求并临时免确认同一设备的后续文件 */
+    private fun respondPendingTrust(id: String) {
+        pendingUis.remove(id)
+        renderPending()
+        FileShareManager.resolvePendingAndTrust(id)
+    }
+
     /** 重建待接收列表（数据量小，全量重建即可；倒计时由 ticker 每秒更新） */
     private fun renderPending() {
         val panel = findViewById<View>(R.id.pendingPanel)
@@ -319,6 +326,8 @@ class FileShareActivity : AppCompatActivity() {
             val cd = item.findViewById<TextView>(R.id.tvPendingCd)
             cd.text = "${((ui.deadline - now) / 1000).coerceAtLeast(0)}s"
             ui.cdView = cd
+            item.findViewById<View>(R.id.btnPendingTrust)
+                .setOnClickListener { respondPendingTrust(p.id) }
             item.findViewById<View>(R.id.btnPendingAccept)
                 .setOnClickListener { respondPending(p.id, true) }
             item.findViewById<View>(R.id.btnPendingReject)
